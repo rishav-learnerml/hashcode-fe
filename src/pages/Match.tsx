@@ -1,130 +1,107 @@
-import { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
-import { toast } from "sonner";
+import  { useEffect, useRef, useState } from "react";
+import io from "socket.io-client";
 
-const socket = io("https://hashtalk.swagcoder.in"); // 🟢 Update if needed
+const socket = io("https://hashtalk.swagcoder.in"); // replace with your deployed backend
 
 const Match = () => {
-  const [, setMatched] = useState(false);
+  const [isMatched, setIsMatched] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const otherUser = useRef<string | null>(null);
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        const localStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
+    // Connect to socket
+    socket.emit("join-room", { roomId: "default" });
+
+    // Get local stream
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        localStreamRef.current = stream;
+
+        // When matched, we start the peer connection
+        socket.on("matched", ({ otherSocketId }) => {
+          otherUser.current = otherSocketId;
+          setIsMatched(true);
+          console.log(isMatched);
+          const peer = createPeer(otherSocketId);
+          peerRef.current = peer;
+
+          stream.getTracks().forEach((track) => peer.addTrack(track, stream));
         });
+      });
 
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream;
-        }
-
-        const peer = new RTCPeerConnection();
-        localStream
-          .getTracks()
-          .forEach((track) => peer.addTrack(track, localStream));
+    // When receiving signal
+    socket.on("signal", ({ from, signal }) => {
+      let peer:any = peerRef.current;
+      if (!peer) {
+        peer = addPeer(signal, from);
         peerRef.current = peer;
-
-        peer.ontrack = (event) => {
-          const [stream] = event.streams;
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = stream;
-          }
-        };
-
-        peer.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit("signal", {
-              roomId: "default",
-              signal: event.candidate,
-              userId: socket.id,
-            });
-          }
-        };
-
-        socket.emit("join-room", "default");
-
-        socket.on("signal", async ({ signal }) => {
-          const peer = peerRef.current;
-          if (!peer) return;
-
-          if (signal.type === "offer") {
-            console.log("📶 Received Offer");
-            await peer.setRemoteDescription(new RTCSessionDescription(signal));
-            const answer = await peer.createAnswer();
-            await peer.setLocalDescription(answer);
-
-            socket.emit("signal", {
-              roomId: "default",
-              signal: answer,
-              userId: socket.id,
-            });
-
-            setMatched(true);
-            toast.success("🎉 Matched (receiver side)");
-          } else if (signal.type === "answer") {
-            console.log("📶 Received Answer");
-            await peer.setRemoteDescription(new RTCSessionDescription(signal));
-            setMatched(true);
-            toast.success("🎉 Matched (offerer side)");
-          } else if (signal.candidate) {
-            try {
-              await peer.addIceCandidate(new RTCIceCandidate(signal));
-            } catch (err) {
-              console.error("Failed to add ICE candidate", err);
-            }
-          }
-        });
-
-        socket.on("users-in-room", async (users: string[]) => {
-          if (users.length === 2) {
-            const offer = await peer.createOffer();
-            await peer.setLocalDescription(offer);
-
-            socket.emit("signal", {
-              roomId: "default",
-              signal: offer,
-              userId: socket.id,
-            });
-          }
-        });
-
-        socket.on("user-disconnected", () => {
-          toast.warning("⚠️ User disconnected");
-          setMatched(false);
-        });
-      } catch (err) {
-        console.error("Media access error:", err);
-        toast.error("Failed to access webcam/microphone.");
+      } else {
+        peer.signal(signal);
       }
-    };
-
-    init();
+    });
 
     return () => {
-      peerRef.current?.close();
       socket.disconnect();
     };
   }, []);
 
+  function createPeer(userToSignal: string) {
+    const peer = new (window as any).SimplePeer({
+      initiator: true,
+      trickle: false,
+      stream: localStreamRef.current,
+    });
+
+    peer.on("signal", (signal:any) => {
+      socket.emit("sending-signal", { signal, to: userToSignal });
+    });
+
+    peer.on("stream", (stream:any) => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+    });
+
+    return peer;
+  }
+
+  function addPeer(incomingSignal: any, callerId: string) {
+    const peer = new (window as any).SimplePeer({
+      initiator: false,
+      trickle: false,
+      stream: localStreamRef.current,
+    });
+
+    peer.on("signal", (signal:any) => {
+      socket.emit("returning-signal", { signal, to: callerId });
+    });
+
+    peer.on("stream", (stream:any) => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+    });
+
+    peer.signal(incomingSignal);
+    return peer;
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-6">
-      <video
-        ref={localVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className="rounded-xl w-80 shadow-lg"
-      />
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        className="rounded-xl w-80 shadow-lg"
-      />
+    <div className="grid grid-cols-2 gap-4 p-4">
+      <div>
+        <h2 className="text-lg font-semibold mb-2">You</h2>
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          className="rounded shadow-lg"
+        />
+      </div>
+      <div>
+        <h2 className="text-lg font-semibold mb-2">Stranger</h2>
+        <video ref={remoteVideoRef} autoPlay className="rounded shadow-lg" />
+      </div>
     </div>
   );
 };
