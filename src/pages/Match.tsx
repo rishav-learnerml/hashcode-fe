@@ -119,16 +119,12 @@ const Match = () => {
         muted
         className="rounded-xl w-80 shadow-lg"
       />
-      {matched ? (
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="rounded-xl w-80 shadow-lg"
-        />
-      ) : (
-        <div className="text-lg text-gray-500">⌛ Waiting for a match...</div>
-      )}
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className="rounded-xl w-80 shadow-lg"
+      />
     </div>
   );
 };
