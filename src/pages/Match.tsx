@@ -1,124 +1,114 @@
-import { useEffect, useRef, useState } from 'react';
-import io from 'socket.io-client';
-import Peer from 'simple-peer';
+// Match.tsx
+import {  useEffect, useRef, useState } from "react";
+import io from "socket.io-client";
+import Peer from "simple-peer";
 
-const socket = io('https://hashtalk.swagcoder.in');
+const socket = io("https://hashtalk.swagcoder.in"); // ✅ use your deployed backend URL
 
-export default function Match() {
+const Match = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [receivingCall, setReceivingCall] = useState(false);
-  const [caller, setCaller] = useState<string | null>(null);
-  const [callerSignal, setCallerSignal] = useState(null);
-  const [callAccepted, setCallAccepted] = useState(false);
+  const [peer, setPeer] = useState<Peer.Instance | null>(null);
+  const [matched, setMatched] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const peerRef = useRef<Peer.Instance | null>(null);
 
-  console.log(stream,receivingCall,caller,callerSignal)
 
+  console.log(stream)
   useEffect(() => {
-    // Get camera and mic access
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
-      setStream(stream);
+    const roomId = crypto.randomUUID(); // or any static string for testing
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((mediaStream) => {
+      setStream(mediaStream);
       if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.srcObject = mediaStream;
       }
 
-      socket.emit('join-room', { roomId: 'hashtalk' });
+      socket.emit("join-room", { roomId });
 
-      socket.on('match-found', ({ socketId }) => {
-        console.log('Matched with:', socketId);
-        const peer = new Peer({
+      socket.on("match-found", ({ socketId }) => {
+        console.log("Matched with", socketId);
+        setMatched(true);
+
+        const newPeer = new Peer({
           initiator: true,
           trickle: false,
-          stream,
+          stream: mediaStream,
         });
 
-        peer.on('signal', (data:any) => {
-          socket.emit('sending-signal', {
+        newPeer.on("signal", (signal) => {
+          socket.emit("sending-signal", {
             userToSignal: socketId,
-            signal: data,
+            signal,
           });
         });
 
-        peer.on('stream', (remoteStream:any) => {
-          console.log('Received remote stream:', remoteStream);
+        newPeer.on("stream", (remoteStream) => {
+          console.log("📹 Remote stream received");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
           }
         });
 
-        socket.on('receiving-returned-signal', ({ signal }) => {
-          setCallAccepted(true);
-          peer.signal(signal);
-        });
-
-        peerRef.current = peer;
+        setPeer(newPeer);
       });
 
-      socket.on('user-joined', ({ signal, callerId }) => {
-        setReceivingCall(true);
-        setCaller(callerId);
-        setCallerSignal(signal);
-
-        const peer = new Peer({
+      socket.on("user-joined", ({ signal, callerId }) => {
+        const newPeer = new Peer({
           initiator: false,
           trickle: false,
-          stream,
+          stream: mediaStream,
         });
 
-        peer.on('signal', (data:any) => {
-          socket.emit('returning-signal', {
-            signal: data,
+        newPeer.on("signal", (signal) => {
+          socket.emit("returning-signal", {
+            signal,
             callerId,
           });
         });
 
-        peer.on('stream', (remoteStream:any) => {
-          console.log('Received remote stream (callee):', remoteStream);
+        newPeer.on("stream", (remoteStream) => {
+          console.log("📹 Remote stream received (non-initiator)");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
           }
         });
 
-        peer.signal(signal);
-        peerRef.current = peer;
-        setCallAccepted(true);
+        newPeer.signal(signal);
+        setPeer(newPeer);
       });
 
-      socket.on('user-disconnected', (id) => {
-        console.log('User disconnected:', id);
-        peerRef.current?.destroy();
-        peerRef.current = null;
-        setCallAccepted(false);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null;
+      socket.on("receiving-returned-signal", ({ signal, id }) => {
+        console.log(id)
+        if (peer) {
+          peer.signal(signal);
         }
+      });
+
+      socket.on("user-disconnected", () => {
+        console.log("User disconnected");
+        remoteVideoRef.current && (remoteVideoRef.current.srcObject = null);
+        peer?.destroy();
+        setPeer(null);
+        setMatched(false);
       });
     });
 
     return () => {
       socket.disconnect();
+      peer?.destroy();
     };
   }, []);
 
   return (
-    <div className="flex flex-col items-center gap-4 p-4">
-      <video
-        ref={localVideoRef}
-        autoPlay
-        muted
-        playsInline
-        className="w-1/2 rounded-xl border shadow"
-      />
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        className="w-1/2 rounded-xl border shadow"
-      />
-      {!callAccepted && <p>🕒 Waiting for match...</p>}
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
+      <h1 className="text-2xl font-bold">{matched ? "🎉 Connected!" : "🔍 Finding a Match..."}</h1>
+      <div className="flex gap-4">
+        <video ref={localVideoRef} autoPlay playsInline muted className="w-64 h-48 rounded-lg border" />
+        <video ref={remoteVideoRef} autoPlay playsInline className="w-64 h-48 rounded-lg border" />
+      </div>
     </div>
   );
-}
+};
+
+export default Match;
