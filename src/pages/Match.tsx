@@ -85,6 +85,9 @@ export default function Match() {
           signal: answer,
           userId: socket.id,
         });
+
+        setMatched(true); // ✅ Add this line so second user sees they're matched
+        toast.success("🎉 You're now matched!");
       } else if (signal.type === "answer") {
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
         setMatched(true);
