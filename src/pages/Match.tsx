@@ -1,356 +1,125 @@
-import { useEffect, useRef, useState } from "react";
-import { useUsername } from "../context/UsernameContext";
-import { Button } from "../components/ui/button";
-import { User, Video, Bot } from "lucide-react";
-import { motion } from "framer-motion";
+import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { toast } from "sonner";
 
-const socket = io("https://hashtalk.swagcoder.in");
-console.log("Socket initialized");
-let peer: RTCPeerConnection | null = null;
-console.log("Peer variable declared");
+const socket = io("https://hashtalk.swagcoder.in"); // 🟢 Update if needed
 
-export default function Match() {
-  const { username } = useUsername();
+const Match = () => {
+  const [matched, setMatched] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const [icebreaker, setIcebreaker] = useState("");
-  const [matched, setMatched] = useState(false);
-  const [remoteUserId, setRemoteUserId] = useState("");
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-
-  const setupMedia = async () => {
-    console.log("setupMedia called");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-    console.log("Local media stream obtained", stream);
-    setLocalStream(stream);
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
-      console.log("Local video element set");
-    }
-    return stream;
-  };
-
-  const createPeer = async () => {
-    console.log("createPeer called");
-    peer = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
-    console.log("RTCPeerConnection created", peer);
-
-    // Handle ICE candidates
-    peer.onicecandidate = (event) => {
-      console.log("onicecandidate event", event);
-      if (event.candidate) {
-        console.log("ICE candidate found", event.candidate);
-        socket.emit("signal", {
-          roomId: "default",
-          signal: event.candidate,
-          userId: socket.id,
-        });
-        console.log("ICE candidate emitted to socket");
-      }
-    };
-
-    // Handle remote stream
-    peer.ontrack = (event) => {
-      console.log("ontrack event", event);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-        console.log("Remote video element set");
-      }
-    };
-
-    // Add local tracks to peer
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        peer!.addTrack(track, localStream);
-        console.log("Local track added to peer", track);
-      });
-    }
-  };
-
-  const initiateOffer = async () => {
-    console.log("initiateOffer called");
-    if (!peer) {
-      console.log("No peer available to initiate offer");
-      return;
-    }
-    const offer = await peer.createOffer();
-    console.log("Offer created", offer);
-    await peer.setLocalDescription(offer);
-    console.log("Local description set with offer");
-    socket.emit("signal", {
-      roomId: "default",
-      signal: offer,
-      userId: socket.id,
-    });
-    console.log("Offer emitted to socket");
-  };
-
-  const handleSignal = async ({ signal, userId }: any) => {
-    console.log("handleSignal called", { signal, userId });
-    if (userId === socket.id || !peer) {
-      console.log("Signal ignored: userId is self or peer is null");
-      return;
-    }
-
-    try {
-      if (signal.type === "offer") {
-        console.log("Received offer signal", signal);
-        await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        console.log("Remote description set with offer");
-        const answer = await peer.createAnswer();
-        console.log("Answer created", answer);
-        await peer.setLocalDescription(answer);
-        console.log("Local description set with answer");
-
-        if (remoteVideoRef.current && peer) {
-          const remoteStream = new MediaStream();
-          peer.getReceivers().forEach((receiver) => {
-            if (receiver.track) {
-              remoteStream.addTrack(receiver.track);
-              console.log(
-                "Remote track added to remote stream",
-                receiver.track
-              );
-            }
-          });
-          remoteVideoRef.current.srcObject = remoteStream;
-          console.log("Remote video element set with remote stream");
-        }
-
-        socket.emit("signal", {
-          roomId: "default",
-          signal: answer,
-          userId: socket.id,
-        });
-        console.log("Answer emitted to socket");
-
-        console.log("matched!!! ✅");
-        setMatched(true); // ✅ Add this line so second user sees they're matched
-        toast.success("🎉 You're now matched!");
-      } else if (signal.type === "answer") {
-        console.log("Received answer signal", signal);
-        await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        console.log("Remote description set with answer");
-        // Set remote video stream for the second peer
-        if (remoteVideoRef.current && peer) {
-          const remoteStream = new MediaStream();
-          peer.getReceivers().forEach((receiver) => {
-            if (receiver.track) {
-              remoteStream.addTrack(receiver.track);
-              console.log(
-                "Remote track added to remote stream (answer)",
-                receiver.track
-              );
-            }
-          });
-          remoteVideoRef.current.srcObject = remoteStream;
-          console.log("Remote video element set with remote stream (answer)");
-        }
-        setMatched(true);
-        toast.success("🎉 You're now matched!");
-      } else if (signal.candidate) {
-        console.log("Received ICE candidate signal", signal);
-        await peer.addIceCandidate(new RTCIceCandidate(signal));
-        console.log("ICE candidate added to peer");
-      }
-    } catch (error) {
-      console.error("Error handling signal", error);
-    }
-  };
-
-  const joinRoom = async () => {
-    console.log("joinRoom called");
-    const stream = await setupMedia();
-    console.log("Media setup complete in joinRoom");
-    socket.emit("join-room", { roomId: "default", userId: socket.id });
-    console.log("join-room event emitted to socket", {
-      roomId: "default",
-      userId: socket.id,
-    });
-
-    socket.on("user-joined", async (userId) => {
-      console.log("user-joined event received", userId);
-      if (userId !== socket.id) {
-        setRemoteUserId(userId);
-        setMatched(true); // ✅ set matched true for the second peer
-        toast.success("🎉 You're now matched!");
-
-        await createPeer();
-        stream.getTracks().forEach((track) => {
-          peer!.addTrack(track, stream);
-          console.log("Local track added to peer in user-joined", track);
-        });
-        await initiateOffer();
-        console.log("Offer initiated in user-joined");
-      }
-    });
-
-    socket.on("all-users", async (users: string[]) => {
-      console.log("all-users event received", users);
-      const otherUsers = users.filter((id) => id !== socket.id);
-      if (otherUsers.length > 0) {
-        setRemoteUserId(otherUsers[0]);
-        await createPeer();
-        stream.getTracks().forEach((track) => {
-          peer!.addTrack(track, stream);
-          console.log("Local track added to peer in all-users", track);
-        });
-        await initiateOffer();
-        console.log("Offer initiated in all-users");
-      }
-    });
-
-    socket.on("signal", handleSignal);
-    console.log("signal event listener set");
-  };
+  const peerRef = useRef<RTCPeerConnection | null>(null);
 
   useEffect(() => {
-    console.log("useEffect for initial mount called");
-    fetch("https://hashtalk.swagcoder.in/ai/icebreaker")
-      .then((res) => {
-        console.log("Icebreaker fetch response", res);
-        return res.json();
-      })
-      .then((data) => {
-        console.log("Icebreaker data received", data);
-        setIcebreaker(data.message || "Start with a smile! 😄");
-      });
+    const init = async () => {
+      try {
+        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-    joinRoom();
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
+
+        const peer = new RTCPeerConnection();
+        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        peerRef.current = peer;
+
+        peer.ontrack = (event) => {
+          const [stream] = event.streams;
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+          }
+        };
+
+        peer.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit("signal", {
+              roomId: "default",
+              signal: event.candidate,
+              userId: socket.id,
+            });
+          }
+        };
+
+        socket.emit("join-room", "default");
+
+        socket.on("signal", async ({ signal, userId }) => {
+          const peer = peerRef.current;
+          if (!peer) return;
+
+          if (signal.type === "offer") {
+            console.log("📶 Received Offer");
+            await peer.setRemoteDescription(new RTCSessionDescription(signal));
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+
+            socket.emit("signal", {
+              roomId: "default",
+              signal: answer,
+              userId: socket.id,
+            });
+
+            setMatched(true);
+            toast.success("🎉 Matched (receiver side)");
+          }
+
+          else if (signal.type === "answer") {
+            console.log("📶 Received Answer");
+            await peer.setRemoteDescription(new RTCSessionDescription(signal));
+            setMatched(true);
+            toast.success("🎉 Matched (offerer side)");
+          }
+
+          else if (signal.candidate) {
+            try {
+              await peer.addIceCandidate(new RTCIceCandidate(signal));
+            } catch (err) {
+              console.error("Failed to add ICE candidate", err);
+            }
+          }
+        });
+
+        socket.on("users-in-room", async (users: string[]) => {
+          if (users.length === 2) {
+            const offer = await peer.createOffer();
+            await peer.setLocalDescription(offer);
+
+            socket.emit("signal", {
+              roomId: "default",
+              signal: offer,
+              userId: socket.id,
+            });
+          }
+        });
+
+        socket.on("user-disconnected", () => {
+          toast.warning("⚠️ User disconnected");
+          setMatched(false);
+        });
+
+      } catch (err) {
+        console.error("Media access error:", err);
+        toast.error("Failed to access webcam/microphone.");
+      }
+    };
+
+    init();
 
     return () => {
-      console.log("Cleanup in useEffect");
-      peer?.close();
-      peer = null;
-      socket.removeAllListeners();
+      peerRef.current?.close();
       socket.disconnect();
-      console.log("Peer closed, socket listeners removed, socket disconnected");
     };
   }, []);
 
-  const resetMatch = () => {
-    console.log("resetMatch called");
-    setMatched(false);
-    setRemoteUserId("");
-    peer?.close();
-    peer = null;
-    console.log("Peer closed and reset in resetMatch");
-    socket.removeAllListeners();
-    console.log("Socket listeners removed in resetMatch");
-    socket.connect(); // reconnect
-    console.log("Socket reconnected in resetMatch");
-    joinRoom();
-    console.log("joinRoom called in resetMatch");
-  };
-
-  useEffect(() => {
-    console.log("Socket ID effect:", socket.id);
-  }, [socket]);
-
-  console.log("Rendering Match component");
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-10 px-6 flex flex-col gap-10 items-center justify-center">
-      <motion.h1
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="text-4xl md:text-5xl font-bold text-center text-white tracking-tight"
-      >
-        🔥 Matching as <span className="text-indigo-400">{username}</span>...
-      </motion.h1>
-
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-        className="text-lg text-zinc-300 text-center max-w-xl"
-      >
-        🤖 Icebreaker:{" "}
-        <span className="italic text-teal-300">{icebreaker}</span>
-      </motion.p>
-
-      <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-10">
-        {/* Local Video */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.8 }}
-          className="relative rounded-2xl shadow-lg overflow-hidden border border-zinc-700 bg-zinc-900"
-        >
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            className="w-full h-80 object-cover rounded-t-2xl"
-          />
-          <div className="flex items-center justify-between p-4 bg-zinc-800">
-            <div className="flex items-center gap-2 text-indigo-300">
-              <User className="w-5 h-5" />
-              <span className="font-semibold">You ({username})</span>
-            </div>
-            <Video className="text-green-400 animate-pulse" />
-          </div>
-        </motion.div>
-
-        {/* Remote Video or Waiting */}
-        {!matched ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 1 }}
-            className="relative rounded-2xl shadow-lg overflow-hidden border border-zinc-700 bg-zinc-900"
-          >
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              className="w-full h-80 object-cover rounded-t-2xl"
-            />
-            <div className="flex items-center justify-between p-4 bg-zinc-800">
-              <div className="flex items-center gap-2 text-pink-300">
-                <Bot className="w-5 h-5" />
-                <span className="font-semibold">Stranger : {remoteUserId}</span>
-              </div>
-              <Video className="text-red-400 animate-pulse" />
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 1 }}
-            className="rounded-2xl shadow-lg overflow-hidden border border-zinc-700 bg-zinc-900 flex items-center justify-center"
-            style={{ minHeight: "22rem" }}
-          >
-            <div className="w-full h-full flex flex-col items-center justify-center p-8">
-              <Bot className="w-10 h-10 text-pink-300 mb-4 animate-bounce" />
-              <span className="font-semibold text-lg text-zinc-300">
-                Waiting for a match...
-              </span>
-            </div>
-          </motion.div>
-        )}
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.2 }}
-      >
-        <Button
-          variant="outline"
-          onClick={resetMatch}
-          className="text-lg px-6 py-2 rounded-xl border-indigo-500 text-indigo-300 hover:bg-indigo-500 hover:text-white"
-        >
-          🔄 Find Another Match
-        </Button>
-      </motion.div>
+    <div className="flex flex-col items-center justify-center min-h-screen gap-6">
+      <video ref={localVideoRef} autoPlay playsInline muted className="rounded-xl w-80 shadow-lg" />
+      {matched ? (
+        <video ref={remoteVideoRef} autoPlay playsInline className="rounded-xl w-80 shadow-lg" />
+      ) : (
+        <div className="text-lg text-gray-500">⌛ Waiting for a match...</div>
+      )}
     </div>
   );
-}
+};
+
+export default Match;
