@@ -6,9 +6,8 @@ import { motion } from "framer-motion";
 import { io } from "socket.io-client";
 import { toast } from "sonner";
 
-const socket = io("https://hashtalk.swagcoder.in/");
+const socket = io("https://hashtalk.swagcoder.in");
 let peer: RTCPeerConnection | null = null;
-let localStream: MediaStream | null = null;
 
 export default function Match() {
   const { username } = useUsername();
@@ -17,31 +16,27 @@ export default function Match() {
   const [icebreaker, setIcebreaker] = useState("");
   const [matched, setMatched] = useState(false);
   const [remoteUserId, setRemoteUserId] = useState("");
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
-  const setupPeerConnection = async () => {
+  const setupMedia = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
+    });
+    setLocalStream(stream);
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+    return stream;
+  };
+
+  const createPeer = async () => {
     peer = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
-    // If stream already exists, reuse it; else get new one
-    if (!localStream) {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-    }
-
-    // Set local video stream
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStream;
-    }
-
-    // Add tracks to peer
-    localStream.getTracks().forEach((track) => {
-      peer!.addTrack(track, localStream!);
-    });
-
-    peer.onicecandidate = (event: any) => {
+    // Handle ICE candidates
+    peer.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("signal", {
           roomId: "default",
@@ -51,46 +46,36 @@ export default function Match() {
       }
     };
 
-    peer.ontrack = (event: any) => {
+    // Handle remote stream
+    peer.ontrack = (event) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
     };
-  };
 
-  const initiateConnection = async (isInitiator: boolean) => {
-    if (isInitiator && peer) {
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      socket.emit("signal", {
-        roomId: "default",
-        signal: offer,
-        userId: socket.id,
+    // Add local tracks to peer
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        peer!.addTrack(track, localStream);
       });
     }
   };
 
-  const setup = async () => {
-    if (peer) peer.close();
-    peer = null;
-    await setupPeerConnection();
-
-    fetch("https://hashtalk.swagcoder.in/ai/icebreaker")
-      .then((res) => res.json())
-      .then((data) => setIcebreaker(data.message || "Start with a smile! 😄"));
-
-    socket.emit("join-room", { roomId: "default", userId: socket.id });
-
-    socket.on("user-joined", async (userId) => {
-      if (userId !== socket.id) {
-        setRemoteUserId(userId);
-        await initiateConnection(true);
-      }
+  const initiateOffer = async () => {
+    if (!peer) return;
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    socket.emit("signal", {
+      roomId: "default",
+      signal: offer,
+      userId: socket.id,
     });
+  };
 
-    socket.on("signal", async ({ signal, userId }) => {
-      if (userId === socket.id || !peer) return;
+  const handleSignal = async ({ signal, userId }: any) => {
+    if (userId === socket.id || !peer) return;
 
+    try {
       if (signal.type === "offer") {
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
         const answer = await peer.createAnswer();
@@ -105,28 +90,56 @@ export default function Match() {
         setMatched(true);
         toast.success("🎉 You're now matched!");
       } else if (signal.candidate) {
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(signal));
-        } catch (err) {
-          console.error("Error adding ICE candidate", err);
-        }
+        await peer.addIceCandidate(new RTCIceCandidate(signal));
+      }
+    } catch (error) {
+      console.error("Error handling signal", error);
+    }
+  };
+
+  const joinRoom = async () => {
+    const stream = await setupMedia();
+    socket.emit("join-room", { roomId: "default", userId: socket.id });
+
+    socket.on("user-joined", async (userId) => {
+      if (userId !== socket.id) {
+        setRemoteUserId(userId);
+        setMatched(true); // ✅ set matched true for the second peer
+        toast.success("🎉 You're now matched!");
+
+        await createPeer();
+        stream.getTracks().forEach((track) => {
+          peer!.addTrack(track, stream);
+        });
+        await initiateOffer();
       }
     });
 
-    socket.on("all-users", async (userIds: string[]) => {
-      for (const userId of userIds) {
-        if (userId !== socket.id) {
-          setRemoteUserId(userId);
-          await initiateConnection(true);
-        }
+    socket.on("all-users", async (users: string[]) => {
+      const otherUsers = users.filter((id) => id !== socket.id);
+      if (otherUsers.length > 0) {
+        setRemoteUserId(otherUsers[0]);
+        await createPeer();
+        stream.getTracks().forEach((track) => {
+          peer!.addTrack(track, stream);
+        });
+        await initiateOffer();
       }
     });
+
+    socket.on("signal", handleSignal);
   };
 
   useEffect(() => {
-    setup();
+    fetch("https://hashtalk.swagcoder.in/ai/icebreaker")
+      .then((res) => res.json())
+      .then((data) => setIcebreaker(data.message || "Start with a smile! 😄"));
+
+    joinRoom();
+
     return () => {
       peer?.close();
+      peer = null;
       socket.removeAllListeners();
       socket.disconnect();
     };
@@ -137,10 +150,10 @@ export default function Match() {
     setRemoteUserId("");
     peer?.close();
     peer = null;
-    socket.removeAllListeners(); // prevent multiple event listeners
-    setup();
+    socket.removeAllListeners();
+    socket.connect(); // reconnect
+    joinRoom();
   };
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-10 px-6 flex flex-col gap-10 items-center justify-center">
@@ -164,6 +177,7 @@ export default function Match() {
       </motion.p>
 
       <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-10">
+        {/* Local Video */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -175,7 +189,7 @@ export default function Match() {
             autoPlay
             muted
             className="w-full h-80 object-cover rounded-t-2xl"
-          ></video>
+          />
           <div className="flex items-center justify-between p-4 bg-zinc-800">
             <div className="flex items-center gap-2 text-indigo-300">
               <User className="w-5 h-5" />
@@ -185,6 +199,7 @@ export default function Match() {
           </div>
         </motion.div>
 
+        {/* Remote Video or Waiting */}
         {matched ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -196,7 +211,7 @@ export default function Match() {
               ref={remoteVideoRef}
               autoPlay
               className="w-full h-80 object-cover rounded-t-2xl"
-            ></video>
+            />
             <div className="flex items-center justify-between p-4 bg-zinc-800">
               <div className="flex items-center gap-2 text-pink-300">
                 <Bot className="w-5 h-5" />
@@ -210,7 +225,7 @@ export default function Match() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 1 }}
-            className="relative rounded-2xl shadow-lg overflow-hidden border border-zinc-700 bg-zinc-900 flex items-center justify-center"
+            className="rounded-2xl shadow-lg overflow-hidden border border-zinc-700 bg-zinc-900 flex items-center justify-center"
             style={{ minHeight: "22rem" }}
           >
             <div className="w-full h-full flex flex-col items-center justify-center p-8">
