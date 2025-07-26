@@ -5,7 +5,7 @@ import { toast } from "sonner";
 const socket = io("https://hashtalk.swagcoder.in"); // 🟢 Update if needed
 
 const Match = () => {
-  const [matched, setMatched] = useState(false);
+  const [, setMatched] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
