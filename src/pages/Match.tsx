@@ -80,11 +80,25 @@ export default function Match() {
         await peer.setRemoteDescription(new RTCSessionDescription(signal));
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
+
+        if (remoteVideoRef.current && peer) {
+          const remoteStream = new MediaStream();
+          peer.getReceivers().forEach((receiver) => {
+            if (receiver.track) {
+              remoteStream.addTrack(receiver.track);
+            }
+          });
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+
         socket.emit("signal", {
           roomId: "default",
           signal: answer,
           userId: socket.id,
         });
+
+        console.log('matched!!! ✅');
+        
 
         setMatched(true); // ✅ Add this line so second user sees they're matched
         toast.success("🎉 You're now matched!");
@@ -105,6 +119,7 @@ export default function Match() {
     socket.emit("join-room", { roomId: "default", userId: socket.id });
 
     socket.on("user-joined", async (userId) => {
+      console.log('User joined:', userId);
       if (userId !== socket.id) {
         setRemoteUserId(userId);
         setMatched(true); // ✅ set matched true for the second peer
@@ -119,6 +134,7 @@ export default function Match() {
     });
 
     socket.on("all-users", async (users: string[]) => {
+      console.log('All users in room:', users);
       const otherUsers = users.filter((id) => id !== socket.id);
       if (otherUsers.length > 0) {
         setRemoteUserId(otherUsers[0]);
@@ -157,6 +173,10 @@ export default function Match() {
     socket.connect(); // reconnect
     joinRoom();
   };
+
+  useEffect(() => {
+    console.log(socket.id, 'Socket ID');
+  }, [socket]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-10 px-6 flex flex-col gap-10 items-center justify-center">
