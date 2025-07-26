@@ -1,146 +1,124 @@
-import { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
+import Peer from 'simple-peer';
 
-const socket = io("https://hashtalk.swagcoder.in", {
-  transports: ["websocket"],
-});
+const socket = io('https://hashtalk.swagcoder.in');
 
-const Match = () => {
+export default function Match() {
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [receivingCall, setReceivingCall] = useState(false);
+  const [caller, setCaller] = useState<string | null>(null);
+  const [callerSignal, setCallerSignal] = useState(null);
+  const [callAccepted, setCallAccepted] = useState(false);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const peerRef = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
-  const [matched, setMatched] = useState(false);
-  const [myId, setMyId] = useState<string | null>(null);
-  const [remoteId, setRemoteId] = useState<string | null>(null);
+  const peerRef = useRef<Peer.Instance | null>(null);
+
+  console.log(stream,receivingCall,caller,callerSignal)
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log(myId)
-      setMyId((socket as any).id);
-      socket.emit("join-room", { roomId: "default" });
-    });
-
-    const initPeer = async () => {
-      localStream.current = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
+    // Get camera and mic access
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+      setStream(stream);
       if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStream.current;
+        localVideoRef.current.srcObject = stream;
       }
 
-      const peer = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
+      socket.emit('join-room', { roomId: 'hashtalk' });
 
-      localStream.current.getTracks().forEach((track) => {
-        peer.addTrack(track, localStream.current!);
-      });
+      socket.on('match-found', ({ socketId }) => {
+        console.log('Matched with:', socketId);
+        const peer = new Peer({
+          initiator: true,
+          trickle: false,
+          stream,
+        });
 
-      peer.ontrack = (event) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      peer.onicecandidate = (event) => {
-        if (event.candidate && remoteId) {
-          socket.emit("sending-signal", {
-            userToSignal: remoteId,
-            signal: event.candidate,
+        peer.on('signal', (data:any) => {
+          socket.emit('sending-signal', {
+            userToSignal: socketId,
+            signal: data,
           });
-        }
-      };
+        });
 
-      peerRef.current = peer;
-    };
+        peer.on('stream', (remoteStream:any) => {
+          console.log('Received remote stream:', remoteStream);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream;
+          }
+        });
 
-    initPeer();
+        socket.on('receiving-returned-signal', ({ signal }) => {
+          setCallAccepted(true);
+          peer.signal(signal);
+        });
 
-    // match found
-    socket.on("match-found", async ({ socketId }) => {
-      setRemoteId(socketId);
-      const peer = peerRef.current!;
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-
-      socket.emit("sending-signal", {
-        userToSignal: socketId,
-        signal: offer,
+        peerRef.current = peer;
       });
-    });
 
-    // handle offer
-    socket.on("user-joined", async ({ signal, callerId }) => {
-      setRemoteId(callerId);
-      const peer = peerRef.current!;
-      await peer.setRemoteDescription(new RTCSessionDescription(signal));
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
+      socket.on('user-joined', ({ signal, callerId }) => {
+        setReceivingCall(true);
+        setCaller(callerId);
+        setCallerSignal(signal);
 
-      socket.emit("returning-signal", {
-        callerId,
-        signal: answer,
+        const peer = new Peer({
+          initiator: false,
+          trickle: false,
+          stream,
+        });
+
+        peer.on('signal', (data:any) => {
+          socket.emit('returning-signal', {
+            signal: data,
+            callerId,
+          });
+        });
+
+        peer.on('stream', (remoteStream:any) => {
+          console.log('Received remote stream (callee):', remoteStream);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream;
+          }
+        });
+
+        peer.signal(signal);
+        peerRef.current = peer;
+        setCallAccepted(true);
       });
-    });
 
-    // handle answer
-    socket.on("receiving-returned-signal", async ({ signal }) => {
-      const peer = peerRef.current!;
-      await peer.setRemoteDescription(new RTCSessionDescription(signal));
-      setMatched(true);
-      toast.success("🎉 You're now matched!");
-    });
-
-    // handle ICE
-    socket.on("sending-signal", async ({ signal }) => {
-      const peer = peerRef.current!;
-      if (signal) {
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(signal));
-        } catch (e) {
-          console.error("ICE error", e);
+      socket.on('user-disconnected', (id) => {
+        console.log('User disconnected:', id);
+        peerRef.current?.destroy();
+        peerRef.current = null;
+        setCallAccepted(false);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
         }
-      }
-    });
-
-    socket.on("user-disconnected", () => {
-      toast.info("User disconnected. Looking for a new match...");
-      setMatched(false);
-      window.location.reload(); // easy reset
+      });
     });
 
     return () => {
       socket.disconnect();
-      peerRef.current?.close();
     };
-  }, [remoteId]);
+  }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen gap-4 bg-gray-950 text-white">
-      <h1 className="text-2xl font-bold">
-        {matched ? "You're connected 🔗" : "Waiting for a match... ⏳"}
-      </h1>
-      <div className="flex gap-4">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          muted
-          playsInline
-          className="w-64 h-64 bg-black rounded-xl"
-        />
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="w-64 h-64 bg-black rounded-xl"
-        />
-      </div>
+    <div className="flex flex-col items-center gap-4 p-4">
+      <video
+        ref={localVideoRef}
+        autoPlay
+        muted
+        playsInline
+        className="w-1/2 rounded-xl border shadow"
+      />
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className="w-1/2 rounded-xl border shadow"
+      />
+      {!callAccepted && <p>🕒 Waiting for match...</p>}
     </div>
   );
-};
-
-export default Match;
+}
