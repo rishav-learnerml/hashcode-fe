@@ -7,7 +7,7 @@ import { io } from "socket.io-client";
 import { toast } from "sonner";
 
 const socket = io("https://hashtalk.swagcoder.in/");
-let peer: RTCPeerConnection;
+let peer: RTCPeerConnection | any;
 
 export default function Match() {
   const { username } = useUsername();
@@ -22,7 +22,7 @@ export default function Match() {
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
-    peer.onicecandidate = (event) => {
+    peer.onicecandidate = (event:any) => {
       if (event.candidate) {
         socket.emit("signal", {
           roomId: "default",
@@ -32,7 +32,7 @@ export default function Match() {
       }
     };
 
-    peer.ontrack = (event) => {
+    peer.ontrack = (event:any) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
@@ -58,12 +58,6 @@ export default function Match() {
     }
   };
 
-  const resetMatch = () => {
-    setMatched(false);
-    setRemoteUserId("");
-    peer?.close();
-    setup();
-  };
 
   const setup = async () => {
     await setupPeerConnection();
@@ -81,31 +75,43 @@ export default function Match() {
       }
     });
 
-    socket.on("signal", async ({ signal, userId }) => {
-      if (userId === socket.id) return;
+  socket.on("signal", async ({ signal, userId }) => {
+  if (userId === socket.id) return;
 
-      if (signal.type === "offer") {
-        await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        socket.emit("signal", {
-          roomId: "default",
-          signal: answer,
-          userId: socket.id,
-        });
-      } else if (signal.type === "answer") {
-        await peer.setRemoteDescription(new RTCSessionDescription(signal));
-        setMatched(true);
-        toast.success("🎉 You're now matched!");
-      } else if (signal.candidate) {
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(signal));
-        } catch (err) {
-          console.error("Error adding ICE candidate", err);
-        }
-      }
+  if (signal.type === "offer") {
+    await peer.setRemoteDescription(new RTCSessionDescription(signal));
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    socket.emit("signal", {
+      roomId: "default",
+      signal: answer,
+      userId: socket.id,
     });
+  } else if (signal.type === "answer") {
+    await peer.setRemoteDescription(new RTCSessionDescription(signal));
+    setMatched(true);
+    toast.success("🎉 You're now matched!");
+  } else if (signal.candidate) {
+    try {
+      await peer.addIceCandidate(new RTCIceCandidate(signal));
+    } catch (err) {
+      console.error("Error adding ICE candidate", err);
+    }
+  }
+});
+
   };
+
+socket.on("all-users", async (userIds: string[]) => {
+  userIds.forEach(async (userId) => {
+    if (userId !== socket.id) {
+      setRemoteUserId(userId);
+      await initiateConnection(true);
+    }
+  });
+});
+
+
 
   useEffect(() => {
     setup();
@@ -114,6 +120,16 @@ export default function Match() {
       socket.disconnect();
     };
   }, []);
+
+  const resetMatch = () => {
+  setMatched(false);
+  setRemoteUserId("");
+  peer?.close();
+  peer = null;
+  socket.removeAllListeners(); // avoid duplicates
+  setup();
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-10 px-6 flex flex-col gap-10 items-center justify-center">
