@@ -7,7 +7,8 @@ import { io } from "socket.io-client";
 import { toast } from "sonner";
 
 const socket = io("https://hashtalk.swagcoder.in/");
-let peer: RTCPeerConnection | any;
+let peer: RTCPeerConnection | null = null;
+let localStream: MediaStream | null = null;
 
 export default function Match() {
   const { username } = useUsername();
@@ -22,7 +23,25 @@ export default function Match() {
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
-    peer.onicecandidate = (event:any) => {
+    // If stream already exists, reuse it; else get new one
+    if (!localStream) {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+    }
+
+    // Set local video stream
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+    }
+
+    // Add tracks to peer
+    localStream.getTracks().forEach((track) => {
+      peer!.addTrack(track, localStream!);
+    });
+
+    peer.onicecandidate = (event: any) => {
       if (event.candidate) {
         socket.emit("signal", {
           roomId: "default",
@@ -32,22 +51,15 @@ export default function Match() {
       }
     };
 
-    peer.ontrack = (event:any) => {
+    peer.ontrack = (event: any) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
     };
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-    if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
   };
 
   const initiateConnection = async (isInitiator: boolean) => {
-    if (isInitiator) {
+    if (isInitiator && peer) {
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       socket.emit("signal", {
@@ -58,8 +70,9 @@ export default function Match() {
     }
   };
 
-
   const setup = async () => {
+    if (peer) peer.close();
+    peer = null;
     await setupPeerConnection();
 
     fetch("https://hashtalk.swagcoder.in/ai/icebreaker")
@@ -71,64 +84,62 @@ export default function Match() {
     socket.on("user-joined", async (userId) => {
       if (userId !== socket.id) {
         setRemoteUserId(userId);
-        initiateConnection(true);
+        await initiateConnection(true);
       }
     });
 
-  socket.on("signal", async ({ signal, userId }) => {
-  if (userId === socket.id) return;
+    socket.on("signal", async ({ signal, userId }) => {
+      if (userId === socket.id || !peer) return;
 
-  if (signal.type === "offer") {
-    await peer.setRemoteDescription(new RTCSessionDescription(signal));
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    socket.emit("signal", {
-      roomId: "default",
-      signal: answer,
-      userId: socket.id,
+      if (signal.type === "offer") {
+        await peer.setRemoteDescription(new RTCSessionDescription(signal));
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socket.emit("signal", {
+          roomId: "default",
+          signal: answer,
+          userId: socket.id,
+        });
+      } else if (signal.type === "answer") {
+        await peer.setRemoteDescription(new RTCSessionDescription(signal));
+        setMatched(true);
+        toast.success("🎉 You're now matched!");
+      } else if (signal.candidate) {
+        try {
+          await peer.addIceCandidate(new RTCIceCandidate(signal));
+        } catch (err) {
+          console.error("Error adding ICE candidate", err);
+        }
+      }
     });
-  } else if (signal.type === "answer") {
-    await peer.setRemoteDescription(new RTCSessionDescription(signal));
-    setMatched(true);
-    toast.success("🎉 You're now matched!");
-  } else if (signal.candidate) {
-    try {
-      await peer.addIceCandidate(new RTCIceCandidate(signal));
-    } catch (err) {
-      console.error("Error adding ICE candidate", err);
-    }
-  }
-});
 
+    socket.on("all-users", async (userIds: string[]) => {
+      for (const userId of userIds) {
+        if (userId !== socket.id) {
+          setRemoteUserId(userId);
+          await initiateConnection(true);
+        }
+      }
+    });
   };
-
-socket.on("all-users", async (userIds: string[]) => {
-  userIds.forEach(async (userId) => {
-    if (userId !== socket.id) {
-      setRemoteUserId(userId);
-      await initiateConnection(true);
-    }
-  });
-});
-
-
 
   useEffect(() => {
     setup();
     return () => {
       peer?.close();
+      socket.removeAllListeners();
       socket.disconnect();
     };
   }, []);
 
   const resetMatch = () => {
-  setMatched(false);
-  setRemoteUserId("");
-  peer?.close();
-  peer = null;
-  socket.removeAllListeners(); // avoid duplicates
-  setup();
-};
+    setMatched(false);
+    setRemoteUserId("");
+    peer?.close();
+    peer = null;
+    socket.removeAllListeners(); // prevent multiple event listeners
+    setup();
+  };
 
 
   return (
