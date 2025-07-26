@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { toast } from "sonner";
 
@@ -13,14 +13,19 @@ const Match = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const localStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = localStream;
         }
 
         const peer = new RTCPeerConnection();
-        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        localStream
+          .getTracks()
+          .forEach((track) => peer.addTrack(track, localStream));
         peerRef.current = peer;
 
         peer.ontrack = (event) => {
@@ -42,7 +47,7 @@ const Match = () => {
 
         socket.emit("join-room", "default");
 
-        socket.on("signal", async ({ signal, userId }) => {
+        socket.on("signal", async ({ signal }) => {
           const peer = peerRef.current;
           if (!peer) return;
 
@@ -60,16 +65,12 @@ const Match = () => {
 
             setMatched(true);
             toast.success("🎉 Matched (receiver side)");
-          }
-
-          else if (signal.type === "answer") {
+          } else if (signal.type === "answer") {
             console.log("📶 Received Answer");
             await peer.setRemoteDescription(new RTCSessionDescription(signal));
             setMatched(true);
             toast.success("🎉 Matched (offerer side)");
-          }
-
-          else if (signal.candidate) {
+          } else if (signal.candidate) {
             try {
               await peer.addIceCandidate(new RTCIceCandidate(signal));
             } catch (err) {
@@ -95,7 +96,6 @@ const Match = () => {
           toast.warning("⚠️ User disconnected");
           setMatched(false);
         });
-
       } catch (err) {
         console.error("Media access error:", err);
         toast.error("Failed to access webcam/microphone.");
@@ -112,9 +112,20 @@ const Match = () => {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-6">
-      <video ref={localVideoRef} autoPlay playsInline muted className="rounded-xl w-80 shadow-lg" />
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className="rounded-xl w-80 shadow-lg"
+      />
       {matched ? (
-        <video ref={remoteVideoRef} autoPlay playsInline className="rounded-xl w-80 shadow-lg" />
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="rounded-xl w-80 shadow-lg"
+        />
       ) : (
         <div className="text-lg text-gray-500">⌛ Waiting for a match...</div>
       )}
