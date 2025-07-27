@@ -14,7 +14,7 @@ const Match = () => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  // const remoteStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
 
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
   const [isInitiator, setIsInitiator] = useState<boolean>(false);
@@ -78,15 +78,20 @@ const Match = () => {
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
 
-      const remoteStream = new MediaStream();
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
 
-      // Add all tracks from the event
-      event.streams[0].getTracks().forEach((track) => {
-        remoteStream.addTrack(track);
-      });
+      // Add only if track not already added
+      const existingTracks = remoteStreamRef.current
+        .getTracks()
+        .map((t) => t.id);
+      if (!existingTracks.includes(event.track.id)) {
+        remoteStreamRef.current.addTrack(event.track);
+      }
 
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
+      if (remoteVideoRef.current && remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
 
         remoteVideoRef.current
           .play()
@@ -290,7 +295,6 @@ const Match = () => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            muted // required if remote stream has audio
             className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
           />
         </div>
