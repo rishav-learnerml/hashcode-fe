@@ -243,13 +243,20 @@ const Match = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       if (remoteVideoRef.current) {
-        console.log("🔍 remoteVideoRef", {
-          srcObject: remoteVideoRef.current.srcObject,
-          readyState: remoteVideoRef.current.readyState,
-          paused: remoteVideoRef.current.paused,
-          videoWidth: remoteVideoRef.current.videoWidth,
-          videoHeight: remoteVideoRef.current.videoHeight,
-        });
+        const video = remoteVideoRef.current;
+        console.log("🧪 FINAL VIDEO DEBUG");
+        console.log("Video Ready State:", video.readyState);
+        console.log("Paused:", video.paused);
+        console.log("Video Width:", video.videoWidth);
+        console.log("Video Height:", video.videoHeight);
+        console.log(
+          "Track Enabled:",
+          (video.srcObject as any).getVideoTracks()?.[0]?.enabled
+        );
+        console.log(
+          "Track Muted:",
+          (video.srcObject as any).getVideoTracks()?.[0]?.muted
+        );
       }
     }, 3000);
 
