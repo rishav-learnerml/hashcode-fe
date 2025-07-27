@@ -42,20 +42,27 @@ const Match = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
         {
-          urls: ["stun:bn-turn1.xirsys.com"],
+          urls: "stun:stun.relay.metered.ca:80",
         },
         {
-          username:
-            "dIUbp2Gao1eqypsQVJEbxfRfyckMUy9XaWBEP3boDVbTjG0tGoQrHSlxSCJv5Eh6AAAAAGiFudpSaXNoYXZDaGF0dGVyamVl",
-          credential: "0ae0360e-6aab-11f0-b3b0-0242ac140004",
-          urls: [
-            "turn:bn-turn1.xirsys.com:80?transport=udp",
-            "turn:bn-turn1.xirsys.com:3478?transport=udp",
-            "turn:bn-turn1.xirsys.com:80?transport=tcp",
-            "turn:bn-turn1.xirsys.com:3478?transport=tcp",
-            "turns:bn-turn1.xirsys.com:443?transport=tcp",
-            "turns:bn-turn1.xirsys.com:5349?transport=tcp",
-          ],
+          urls: "turn:global.relay.metered.ca:80",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
         },
       ],
     });
