@@ -43,9 +43,14 @@ const Match = () => {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         {
-          urls: "turn:relay.metered.ca:443",
-          username: "openai",
-          credential: "openai",
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject",
         },
       ],
     });
@@ -180,77 +185,81 @@ const Match = () => {
   };
 
   return (
- <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
-  <Fireflies />
+    <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
+      <Fireflies />
 
-  {/* Animated Logo */}
-  <motion.img
-    src={logo}
-    alt="HashTalk Logo"
-    className="w-24 h-24 bg-transparent mb-8 z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
-    animate={{ y: [0, -12, 0] }}
-    transition={{ duration: 2.5, ease: "easeInOut" }}
-  />
-
-  {/* Video Grid */}
-  <motion.div
-    className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-5xl z-10"
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.7, delay: 0.2 }}
-  >
-    {/* Local Video */}
-    <div className="flex flex-col items-center space-y-1">
-      <p className="text-sm text-blue-300 tracking-wide">👤 You</p>
-      <video
-        ref={localVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(0,255,255,0.2)] md:w-96 md:h-96"
+      {/* Animated Logo */}
+      <motion.img
+        src={logo}
+        alt="HashTalk Logo"
+        className="w-24 h-24 bg-transparent mb-8 z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+        animate={{ y: [0, -12, 0] }}
+        transition={{ duration: 2.5, ease: "easeInOut" }}
       />
+
+      {/* Video Grid */}
+      <motion.div
+        className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-5xl z-10"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, delay: 0.2 }}
+      >
+        {/* Local Video */}
+        <div className="flex flex-col items-center space-y-1">
+          <p className="text-sm text-blue-300 tracking-wide">👤 You</p>
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(0,255,255,0.2)] md:w-96 md:h-96"
+          />
+        </div>
+
+        {/* Remote Video */}
+        <div className="flex flex-col items-center space-y-1">
+          <p className="text-sm text-pink-300 tracking-wide">🧑‍💻 Stranger Dev</p>
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
+          />
+        </div>
+      </motion.div>
+
+      {/* Icebreaker Prompt */}
+      <motion.div
+        className="mt-8 bg-white/10 backdrop-blur-lg p-4 px-6 rounded-lg border border-white/10 text-center max-w-2xl w-full shadow-md z-10"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+      >
+        <p className="text-base font-medium text-white">
+          💬 Icebreaker:{" "}
+          <span className="italic text-blue-200">
+            {icebreaker || "Loading..."}
+          </span>
+        </p>
+      </motion.div>
+
+      {/* Rematch Button */}
+      <motion.button
+        onClick={handleRematch}
+        className="mt-6 px-6 py-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 text-white font-semibold rounded-full shadow-lg transition-all duration-300"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        🔁 Rematch
+      </motion.button>
+
+      {/* Footer */}
+      <div className="absolute bottom-4 text-gray-400 text-xs z-10 tracking-wide">
+        Made with 💙 for devs by{" "}
+        <span className="text-white font-medium">Rishav</span> · Zero-Cost Infra
+        · Full OSS 🚀
+      </div>
     </div>
-
-    {/* Remote Video */}
-    <div className="flex flex-col items-center space-y-1">
-      <p className="text-sm text-pink-300 tracking-wide">🧑‍💻 Stranger Dev</p>
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
-      />
-    </div>
-  </motion.div>
-
-  {/* Icebreaker Prompt */}
-  <motion.div
-    className="mt-8 bg-white/10 backdrop-blur-lg p-4 px-6 rounded-lg border border-white/10 text-center max-w-2xl w-full shadow-md z-10"
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, delay: 0.4 }}
-  >
-    <p className="text-base font-medium text-white">
-      💬 Icebreaker: <span className="italic text-blue-200">{icebreaker || "Loading..."}</span>
-    </p>
-  </motion.div>
-
-  {/* Rematch Button */}
-  <motion.button
-    onClick={handleRematch}
-    className="mt-6 px-6 py-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 text-white font-semibold rounded-full shadow-lg transition-all duration-300"
-    whileHover={{ scale: 1.05 }}
-    whileTap={{ scale: 0.95 }}
-  >
-    🔁 Rematch
-  </motion.button>
-
-  {/* Footer */}
-  <div className="absolute bottom-4 text-gray-400 text-xs z-10 tracking-wide">
-    Made with 💙 for devs by <span className="text-white font-medium">Rishav</span> · Zero-Cost Infra · Full OSS 🚀
-  </div>
-</div>
-
   );
 };
 
