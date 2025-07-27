@@ -46,12 +46,12 @@ const Match = () => {
           urls: "stun:stun.relay.metered.ca:80",
         },
         {
-          urls: "turn:relay1.expressturn.com:3480",
+          urls: "turn:global.relay.metered.ca:80",
           username: "b10557008dab16b3b63274c4",
           credential: "ISOBNxTOrdXdqggD",
         },
         {
-          urls: "turn:relay1.expressturn.com:3480?transport=tcp",
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
           username: "b10557008dab16b3b63274c4",
           credential: "ISOBNxTOrdXdqggD",
         },
@@ -78,26 +78,26 @@ const Match = () => {
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
 
-      const remoteVideo = remoteVideoRef.current;
-      if (!remoteVideo) return;
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
 
-      // Create a fresh MediaStream with the incoming track
-      const incomingStream = new MediaStream([event.track]);
-      remoteStreamRef.current = incomingStream;
-      remoteVideo.srcObject = incomingStream;
+      // Add only if track not already added
+      const existingTracks = remoteStreamRef.current
+        .getTracks()
+        .map((t) => t.id);
+      if (!existingTracks.includes(event.track.id)) {
+        remoteStreamRef.current.addTrack(event.track);
+      }
 
-      // Wait until metadata is ready before playing
-      remoteVideo.onloadedmetadata = () => {
-        remoteVideo
+      if (remoteVideoRef.current && remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+
+        remoteVideoRef.current
           .play()
-          .then(() => {
-            console.log("▶️ Remote video playing successfully.");
-            remoteVideo.muted = false; // Unmute after playback starts
-          })
-          .catch((err) => {
-            console.warn("❌ Error playing remote video:", err);
-          });
-      };
+          .then(() => console.log("▶️ Remote video playing"))
+          .catch((err) => console.warn("❌ Remote video play error:", err));
+      }
     };
 
     peer.oniceconnectionstatechange = () => {
