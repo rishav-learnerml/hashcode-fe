@@ -82,21 +82,30 @@ const Match = () => {
         remoteStreamRef.current = new MediaStream();
       }
 
-      // Add only if track not already added
-      const existingTracks = remoteStreamRef.current
-        .getTracks()
-        .map((t) => t.id);
-      if (!existingTracks.includes(event.track.id)) {
-        remoteStreamRef.current.addTrack(event.track);
-      }
+      remoteStreamRef.current.addTrack(event.track);
 
-      if (remoteVideoRef.current && remoteStreamRef.current) {
+      if (remoteVideoRef.current) {
+        // Always reassign to avoid race
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
 
-        remoteVideoRef.current
-          .play()
-          .then(() => console.log("▶️ Remote video playing"))
-          .catch((err) => console.warn("❌ Remote video play error:", err));
+        // Add metadata loaded listener
+        remoteVideoRef.current.onloadedmetadata = () => {
+          console.log("📸 Metadata loaded — playing remote video");
+          remoteVideoRef.current
+            ?.play()
+            .catch((e) => console.warn("⛔ Couldn't autoplay:", e));
+        };
+
+        // Fallback: try loading manually too
+        setTimeout(() => {
+          remoteVideoRef.current?.load();
+          remoteVideoRef.current
+            ?.play()
+            .then(() => console.log("▶️ Remote video playing"))
+            .catch((e) =>
+              console.warn("⚠️ Remote video play failed in fallback:", e)
+            );
+        }, 300);
       }
     };
 
@@ -247,8 +256,6 @@ const Match = () => {
           srcObject: remoteVideoRef.current.srcObject,
           readyState: remoteVideoRef.current.readyState,
           paused: remoteVideoRef.current.paused,
-          videoWidth: remoteVideoRef.current.videoWidth,
-          videoHeight: remoteVideoRef.current.videoHeight,
         });
       }
     }, 3000);
@@ -295,7 +302,7 @@ const Match = () => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            muted // required if remote stream has audio
+            muted={false} // required if remote stream has audio
             className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
           />
         </div>
