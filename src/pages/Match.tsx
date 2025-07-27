@@ -80,15 +80,33 @@ const Match = () => {
 
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStreamRef.current;
-          remoteVideoRef.current
-            .play()
-            .catch((e) => console.warn("Playback prevented:", e));
-        }
       }
 
       remoteStreamRef.current.addTrack(event.track);
+
+      if (remoteVideoRef.current) {
+        // Always reassign to avoid race
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+
+        // Add metadata loaded listener
+        remoteVideoRef.current.onloadedmetadata = () => {
+          console.log("📸 Metadata loaded — playing remote video");
+          remoteVideoRef.current
+            ?.play()
+            .catch((e) => console.warn("⛔ Couldn't autoplay:", e));
+        };
+
+        // Fallback: try loading manually too
+        setTimeout(() => {
+          remoteVideoRef.current?.load();
+          remoteVideoRef.current
+            ?.play()
+            .then(() => console.log("▶️ Remote video playing"))
+            .catch((e) =>
+              console.warn("⚠️ Remote video play failed in fallback:", e)
+            );
+        }, 300);
+      }
     };
 
     peer.oniceconnectionstatechange = () => {
@@ -232,19 +250,20 @@ const Match = () => {
   };
 
   useEffect(() => {
-  const interval = setInterval(() => {
-    if (remoteVideoRef.current) {
-      console.log("🔍 remoteVideoRef", {
-        srcObject: remoteVideoRef.current.srcObject,
-        readyState: remoteVideoRef.current.readyState,
-        paused: remoteVideoRef.current.paused,
-      });
-    }
-  }, 3000);
+    const interval = setInterval(() => {
+      if (remoteVideoRef.current) {
+        console.log("🔍 remoteVideoRef", {
+          srcObject: remoteVideoRef.current.srcObject,
+          readyState: remoteVideoRef.current.readyState,
+          paused: remoteVideoRef.current.paused,
+          videoWidth: remoteVideoRef.current.videoWidth,
+          videoHeight: remoteVideoRef.current.videoHeight,
+        });
+      }
+    }, 3000);
 
-  return () => clearInterval(interval);
-}, []);
-
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
