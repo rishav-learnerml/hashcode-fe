@@ -77,6 +77,7 @@ const Match = () => {
 
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
+      console.log("🧪 Remote Video Element:", remoteVideoRef.current);
 
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
@@ -304,7 +305,7 @@ const Match = () => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            muted={false} // required if remote stream has audio
+            muted // required if remote stream has audio
             className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
           />
         </div>
