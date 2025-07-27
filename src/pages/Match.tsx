@@ -43,27 +43,12 @@ const Match = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
         {
-          urls: "stun:stun.relay.metered.ca:80",
+          urls: "relay1.expressturn.com:3480", // Optional but useful STUN server
         },
         {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
+          urls: "turn:relay1.expressturn.com:3480",
+          username: "000000002068961942",
+          credential: "xq9nuKiM1sWT96YeutcpI3CUs3U=",
         },
       ],
     });
