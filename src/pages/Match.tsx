@@ -80,15 +80,23 @@ const Match = () => {
 
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStreamRef.current;
-          remoteVideoRef.current
-            .play()
-            .catch((e) => console.warn("Playback prevented:", e));
-        }
       }
 
       remoteStreamRef.current.addTrack(event.track);
+
+      if (remoteVideoRef.current) {
+        // Only update srcObject if not already set
+        if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        }
+
+        // Wait briefly before calling play
+        setTimeout(() => {
+          remoteVideoRef.current?.play().catch((e) => {
+            console.warn("Playback prevented:", e);
+          });
+        }, 200); // slight delay to allow srcObject to stabilize
+      }
     };
 
     peer.oniceconnectionstatechange = () => {
@@ -106,6 +114,22 @@ const Match = () => {
         });
       }
     };
+
+    peer.getStats().then((stats) => {
+      stats.forEach((report) => {
+        if (
+          report.type === "candidate-pair" &&
+          report.state === "succeeded" &&
+          report.nominated
+        ) {
+          console.log(
+            "✅ Connection type:",
+            report.localCandidateId,
+            report.remoteCandidateId
+          );
+        }
+      });
+    });
 
     return peer;
   };
