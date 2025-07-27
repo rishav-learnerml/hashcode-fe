@@ -1,162 +1,109 @@
-import { useEffect, useRef, useState } from "react";
-import io from "socket.io-client";
+import { useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
 
-const socket = io("https://hashtalk.swagcoder.in"); // your signaling server
+const socket = io('https://hashtalk.swagcoder.in'); // your server
 
 const Match = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
-  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
   const [matched, setMatched] = useState(false);
 
   useEffect(() => {
-    const roomId = "default";
+    socket.on('connect', () => {
+      console.log('Connected to signaling server');
+      socket.emit('join-room');
+    });
 
-    const start = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
+    socket.on('match-found', async ({ offer }) => {
+      console.log('Match found! Setting remote offer...');
+      setMatched(true);
 
-      localStream.current = stream;
+      peerConnection.current = createPeerConnection();
 
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+      await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.current.createAnswer();
+      await peerConnection.current.setLocalDescription(answer);
+
+      socket.emit('returning-signal', { answer });
+    });
+
+    socket.on('sending-signal', async ({ offer }) => {
+      console.log('Received offer from remote peer');
+      peerConnection.current = createPeerConnection();
+
+      await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.current.createAnswer();
+      await peerConnection.current.setLocalDescription(answer);
+
+      socket.emit('returning-signal', { answer });
+    });
+
+    socket.on('answer-received', async ({ answer }) => {
+      console.log('Answer received');
+      if (peerConnection.current) {
+        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
       }
+    });
 
-      socket.emit("join-room", { roomId });
-
-      socket.on("match-found", async ({ socketId }: { socketId: string }) => {
-        setRemoteUserId(socketId);
-        setMatched(true);
-        createPeer(true, socketId);
-      });
-
-      socket.on("user-joined", async ({ signal, callerId }) => {
-        setRemoteUserId(callerId);
-        setMatched(true);
-        createPeer(false, callerId, signal);
-      });
-
-      socket.on("signal", async ({ signal }) => {
-        if (!peerConnection.current) return;
-        if (signal.type === "offer") {
-          await peerConnection.current.setRemoteDescription(
-            new RTCSessionDescription(signal)
-          );
-          const answer = await peerConnection.current.createAnswer();
-          await peerConnection.current.setLocalDescription(answer);
-          socket.emit("returning-signal", { signal: answer, callerId: remoteUserId });
-        } else if (signal.type === "answer") {
-          await peerConnection.current.setRemoteDescription(
-            new RTCSessionDescription(signal)
-          );
-        } else if (signal.candidate) {
-          try {
-            await peerConnection.current.addIceCandidate(new RTCIceCandidate(signal));
-          } catch (err) {
-            console.error("Error adding ICE candidate", err);
-          }
-        }
-      });
-
-      socket.on("user-disconnected", () => {
-        if (peerConnection.current) {
-          peerConnection.current.close();
-          peerConnection.current = null;
-        }
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null;
-        }
-        setMatched(false);
-        setRemoteUserId(null);
-      });
-    };
-
-    const createPeer = async (
-      isInitiator: boolean,
-      otherUserId: string,
-      incomingSignal?: RTCSessionDescriptionInit
-    ) => {
-      peerConnection.current = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-        ],
-      });
-
-      if (localStream.current) {
-        localStream.current.getTracks().forEach((track) => {
-          peerConnection.current?.addTrack(track, localStream.current!);
-        });
+    socket.on('ice-candidate', async ({ candidate }) => {
+      console.log('ICE candidate received');
+      if (peerConnection.current) {
+        await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
       }
+    });
 
-      peerConnection.current.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit("sending-signal", {
-            userToSignal: otherUserId,
-            signal: event.candidate,
-          });
-        }
-      };
-
-      peerConnection.current.ontrack = (event) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      if (isInitiator) {
-        const offer = await peerConnection.current.createOffer();
-        await peerConnection.current.setLocalDescription(offer);
-        socket.emit("sending-signal", {
-          userToSignal: otherUserId,
-          signal: offer,
-        });
-      } else if (incomingSignal) {
-        await peerConnection.current.setRemoteDescription(incomingSignal);
-        const answer = await peerConnection.current.createAnswer();
-        await peerConnection.current.setLocalDescription(answer);
-        socket.emit("returning-signal", {
-          signal: answer,
-          callerId: otherUserId,
-        });
-      }
-    };
-
-    start();
+    getUserMedia();
 
     return () => {
       socket.disconnect();
-      if (peerConnection.current) {
-        peerConnection.current.close();
-      }
     };
   }, []);
 
+  const createPeerConnection = () => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', { candidate: event.candidate });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      console.log('Remote track received');
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    if (localVideoRef.current && localVideoRef.current.srcObject) {
+      const tracks = (localVideoRef.current.srcObject as MediaStream).getTracks();
+      for (const track of tracks) {
+        pc.addTrack(track, localVideoRef.current.srcObject as MediaStream);
+      }
+    }
+
+    return pc;
+  };
+
+  const getUserMedia = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error('Failed to get local stream', error);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
-      <h1 className="text-2xl font-bold">
-        {matched
-          ? `🎉 Connected!${remoteUserId ? ` (User: ${remoteUserId})` : ""}`
-          : "🔍 Finding a Match..."}
-      </h1>
-      <div className="flex gap-4">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-64 h-48 rounded-lg border"
-        />
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="w-64 h-48 rounded-lg border"
-        />
-      </div>
+    <div className="flex flex-col items-center p-4 space-y-4">
+      <video ref={localVideoRef} autoPlay muted className="w-1/2 rounded-lg border" />
+      <video ref={remoteVideoRef} autoPlay className="w-1/2 rounded-lg border" />
+      {!matched && <p>Waiting for a match...</p>}
     </div>
   );
 };
