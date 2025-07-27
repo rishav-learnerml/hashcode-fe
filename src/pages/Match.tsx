@@ -75,27 +75,23 @@ const Match = () => {
     // Define once and reuse
     if (!remoteVideoRef.current) return peer;
 
-    peer.ontrack = (event) => {
-      console.log("✅ Remote track received", event.track.kind);
-
+    peer.ontrack = ({ streams }) => {
       const remoteVideo = remoteVideoRef.current;
       if (!remoteVideo) return;
 
-      // Create a fresh MediaStream with the incoming track
-      const incomingStream = new MediaStream([event.track]);
-      remoteStreamRef.current = incomingStream;
-      remoteVideo.srcObject = incomingStream;
+      const [stream] = streams;
+      if (!stream) return;
 
-      // Wait until metadata is ready before playing
+      remoteVideo.srcObject = stream;
+
       remoteVideo.onloadedmetadata = () => {
         remoteVideo
           .play()
           .then(() => {
-            console.log("▶️ Remote video playing successfully.");
-            remoteVideo.muted = false; // Unmute after playback starts
+            console.log("✅ Remote video playing");
           })
-          .catch((err) => {
-            console.warn("❌ Error playing remote video:", err);
+          .catch((e) => {
+            console.error("❌ Video play error", e);
           });
       };
     };
@@ -263,6 +259,13 @@ const Match = () => {
     return () => clearInterval(interval);
   }, []);
 
+  setTimeout(() => {
+    const vid = remoteVideoRef.current;
+    if (vid?.videoWidth === 0) {
+      console.warn("⚠️ Still zero videoWidth – stream not rendering");
+    }
+  }, 2000);
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
       <Fireflies />
@@ -302,7 +305,8 @@ const Match = () => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
+            muted={false}
+            className="rounded-lg w-full max-w-sm aspect-video bg-black"
           />
         </div>
       </motion.div>
