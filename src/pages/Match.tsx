@@ -14,7 +14,7 @@ const Match = () => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
+  // const remoteStreamRef = useRef<MediaStream | null>(null);
 
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
   const [isInitiator, setIsInitiator] = useState<boolean>(false);
@@ -77,36 +77,21 @@ const Match = () => {
 
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
-      console.log("🧪 Remote Video Element:", remoteVideoRef.current);
 
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
+      const remoteStream = new MediaStream();
 
-      remoteStreamRef.current.addTrack(event.track);
+      // Add all tracks from the event
+      event.streams[0].getTracks().forEach((track) => {
+        remoteStream.addTrack(track);
+      });
 
       if (remoteVideoRef.current) {
-        // Always reassign to avoid race
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        remoteVideoRef.current.srcObject = remoteStream;
 
-        // Add metadata loaded listener
-        remoteVideoRef.current.onloadedmetadata = () => {
-          console.log("📸 Metadata loaded — playing remote video");
-          remoteVideoRef.current
-            ?.play()
-            .catch((e) => console.warn("⛔ Couldn't autoplay:", e));
-        };
-
-        // Fallback: try loading manually too
-        setTimeout(() => {
-          remoteVideoRef.current?.load();
-          remoteVideoRef.current
-            ?.play()
-            .then(() => console.log("▶️ Remote video playing"))
-            .catch((e) =>
-              console.warn("⚠️ Remote video play failed in fallback:", e)
-            );
-        }, 300);
+        remoteVideoRef.current
+          .play()
+          .then(() => console.log("▶️ Remote video playing"))
+          .catch((err) => console.warn("❌ Remote video play error:", err));
       }
     };
 
