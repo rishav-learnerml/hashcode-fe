@@ -12,7 +12,7 @@ import { motion } from "framer-motion";
 import logo from "/logo.png";
 import { toast } from "sonner";
 
-const API_URL = "https://hashtalk.swagcoder.in/auth"; // Your backend
+const API_URL = "https://hashtalk.swagcoder.in"; // Your backend
 
 export default function Auth() {
   const navigate = useNavigate();

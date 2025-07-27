@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
-// ⚠️ Replace with your deployed backend WebSocket URL
 const socket = io("https://hashtalk.swagcoder.in", {
   transports: ["websocket"],
 });
@@ -12,8 +11,9 @@ const Match = () => {
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
+  const [isInitiator, setIsInitiator] = useState<boolean>(false);
 
-  // 👀 Initialize local media
+  // 1. Get local media
   useEffect(() => {
     const getMedia = async () => {
       try {
@@ -32,37 +32,30 @@ const Match = () => {
     getMedia();
   }, []);
 
-  // 🛠️ Create new peer connection
   const createPeerConnection = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
-        {
-          urls: "stun:stun.l.google.com:19302",
-        },
-        {
-          urls: "turn:relay.metered.ca:80",
-          username: "openai",
-          credential: "openai",
-        },
+        { urls: "stun:stun.l.google.com:19302" },
         {
           urls: "turn:relay.metered.ca:443",
-          username: "openai",
-          credential: "openai",
-        },
-        {
-          urls: "turn:relay.metered.ca:443?transport=tcp",
           username: "openai",
           credential: "openai",
         },
       ],
     });
 
-    // Add local tracks
     localStreamRef.current?.getTracks().forEach((track) => {
-      peer.addTrack(track, localStreamRef.current as MediaStream);
+      peer.addTrack(track, localStreamRef.current!);
     });
 
-    // 🔁 Handle ICE candidate
+    const remoteStream = new MediaStream();
+    peer.ontrack = (event) => {
+      remoteStream.addTrack(event.track);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+    };
+
     peer.onicecandidate = (event) => {
       if (event.candidate && remoteSocketId) {
         socket.emit("ice-candidate", {
@@ -72,50 +65,47 @@ const Match = () => {
       }
     };
 
-    // 🎥 Remote video stream
-    const remoteStream = new MediaStream();
-    peer.ontrack = (event) => {
-      remoteStream.addTrack(event.track);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
-    };
-
     return peer;
   };
 
-  // 📞 Initiate call (create offer)
-  const initiateCall = async (targetId: string) => {
-    peerRef.current = createPeerConnection();
-    const offer = await peerRef.current.createOffer();
-    await peerRef.current.setLocalDescription(offer);
+  const initiateCall = async () => {
+    try {
+      const peer = createPeerConnection();
+      peerRef.current = peer;
 
-    socket.emit("sending-signal", {
-      userToSignal: targetId,
-      signal: offer,
-      callerId: socket.id,
-    });
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
+      socket.emit("sending-signal", {
+        userToSignal: remoteSocketId,
+        signal: offer,
+        callerId: socket.id,
+      });
+    } catch (err) {
+      console.error("Error initiating call:", err);
+    }
   };
 
-  // 💬 Socket listeners
   useEffect(() => {
-    socket.on("match-found", ({ socketId }) => {
+    socket.on("match-found", ({ socketId }: { socketId: string }) => {
       console.log("Match found with", socketId);
       setRemoteSocketId(socketId);
-      initiateCall(socketId);
+
+      // Simple deterministic logic: lexicographically smaller ID initiates
+      if ((socket as any).id < socketId) {
+        setIsInitiator(true);
+      }
     });
 
     socket.on("user-joined", async ({ signal, callerId }) => {
       console.log("User joined:", callerId);
       setRemoteSocketId(callerId);
-      peerRef.current = createPeerConnection();
+      const peer = createPeerConnection();
+      peerRef.current = peer;
 
-      await peerRef.current.setRemoteDescription(
-        new RTCSessionDescription(signal)
-      );
-
-      const answer = await peerRef.current.createAnswer();
-      await peerRef.current.setLocalDescription(answer);
+      await peer.setRemoteDescription(new RTCSessionDescription(signal));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
 
       socket.emit("returning-signal", {
         signal: answer,
@@ -125,16 +115,25 @@ const Match = () => {
 
     socket.on("receiving-returned-signal", async ({ signal }) => {
       console.log("Receiving returned signal");
-      await peerRef.current?.setRemoteDescription(
-        new RTCSessionDescription(signal)
-      );
+      const connectionState = peerRef.current?.signalingState;
+      if (connectionState !== "stable") {
+        try {
+          await peerRef.current?.setRemoteDescription(
+            new RTCSessionDescription(signal)
+          );
+        } catch (e) {
+          console.error("Error setting returned signal:", e);
+        }
+      } else {
+        console.log("Ignoring returned signal due to state:", connectionState);
+      }
     });
 
     socket.on("ice-candidate", async (candidate) => {
       try {
         await peerRef.current?.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
-        console.error("Error adding received ice candidate", err);
+        console.error("Error adding ICE candidate", err);
       }
     });
 
@@ -154,7 +153,14 @@ const Match = () => {
       socket.off("ice-candidate");
       socket.off("user-disconnected");
     };
-  }, [remoteSocketId]);
+  }, []);
+
+  // Trigger call initiation after we know both socketId and role
+  useEffect(() => {
+    if (remoteSocketId && isInitiator) {
+      initiateCall();
+    }
+  }, [remoteSocketId, isInitiator]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 gap-6">
