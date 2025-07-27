@@ -1,109 +1,122 @@
-import { useEffect, useRef, useState } from 'react';
-import io from 'socket.io-client';
+import React, { useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 
-const socket = io('https://hashtalk.swagcoder.in'); // your server
+const SOCKET_SERVER_URL = "https://hashtalk.swagcoder.in"; // your deployed backend
 
-const Match = () => {
+const Match: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const peerConnection = useRef<RTCPeerConnection | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const peerRef = useRef<RTCPeerConnection | null>(null);
   const [matched, setMatched] = useState(false);
 
+  const configuration: RTCConfiguration = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  };
+
   useEffect(() => {
-    socket.on('connect', () => {
-      console.log('Connected to signaling server');
-      socket.emit('join-room');
-    });
+    socketRef.current = io(SOCKET_SERVER_URL);
+    const socket = socketRef.current;
 
-    socket.on('match-found', async ({ offer }) => {
-      console.log('Match found! Setting remote offer...');
-      setMatched(true);
+    let localStream: MediaStream;
 
-      peerConnection.current = createPeerConnection();
-
-      await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.current.createAnswer();
-      await peerConnection.current.setLocalDescription(answer);
-
-      socket.emit('returning-signal', { answer });
-    });
-
-    socket.on('sending-signal', async ({ offer }) => {
-      console.log('Received offer from remote peer');
-      peerConnection.current = createPeerConnection();
-
-      await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.current.createAnswer();
-      await peerConnection.current.setLocalDescription(answer);
-
-      socket.emit('returning-signal', { answer });
-    });
-
-    socket.on('answer-received', async ({ answer }) => {
-      console.log('Answer received');
-      if (peerConnection.current) {
-        await peerConnection.current.setRemoteDescription(new RTCSessionDescription(answer));
+    const init = async () => {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStream;
       }
-    });
 
-    socket.on('ice-candidate', async ({ candidate }) => {
-      console.log('ICE candidate received');
-      if (peerConnection.current) {
-        await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
-      }
-    });
+      peerRef.current = new RTCPeerConnection(configuration);
 
-    getUserMedia();
+      // Add tracks to peer connection
+      localStream.getTracks().forEach((track) => {
+        peerRef.current!.addTrack(track, localStream);
+      });
+
+      // Handle remote stream
+      peerRef.current.ontrack = (event) => {
+        const remoteStream = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+        console.log("🎥 Remote stream set");
+      };
+
+      // Handle ICE candidates
+      peerRef.current.onicecandidate = (event) => {
+        if (event.candidate && socket) {
+          socket.emit("ice-candidate", event.candidate);
+        }
+      };
+
+      // Join room
+      socket.emit("join-room");
+
+      // Handle match
+      socket.on("user-joined", async (userId: string) => {
+        console.log("👋 Matched with another user");
+
+        const offer = await peerRef.current!.createOffer();
+        await peerRef.current!.setLocalDescription(offer);
+
+        socket.emit("sending-signal", {
+          signal: offer,
+          to: userId,
+        });
+      });
+
+      socket.on("receive-signal", async ({ signal, from }) => {
+        await peerRef.current!.setRemoteDescription(new RTCSessionDescription(signal));
+
+        const answer = await peerRef.current!.createAnswer();
+        await peerRef.current!.setLocalDescription(answer);
+
+        socket.emit("returning-signal", {
+          signal: answer,
+          to: from,
+        });
+      });
+
+      socket.on("received-returned-signal", async ({ signal }) => {
+        await peerRef.current!.setRemoteDescription(new RTCSessionDescription(signal));
+        console.log("✅ Connected with peer");
+        setMatched(true);
+      });
+
+      socket.on("ice-candidate", async (candidate) => {
+        try {
+          await peerRef.current!.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error("Error adding ICE candidate", err);
+        }
+      });
+    };
+
+    init();
 
     return () => {
       socket.disconnect();
+      peerRef.current?.close();
     };
   }, []);
 
-  const createPeerConnection = () => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit('ice-candidate', { candidate: event.candidate });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log('Remote track received');
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-      }
-    };
-
-    if (localVideoRef.current && localVideoRef.current.srcObject) {
-      const tracks = (localVideoRef.current.srcObject as MediaStream).getTracks();
-      for (const track of tracks) {
-        pc.addTrack(track, localVideoRef.current.srcObject as MediaStream);
-      }
-    }
-
-    return pc;
-  };
-
-  const getUserMedia = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-    } catch (error) {
-      console.error('Failed to get local stream', error);
-    }
-  };
-
   return (
-    <div className="flex flex-col items-center p-4 space-y-4">
-      <video ref={localVideoRef} autoPlay muted className="w-1/2 rounded-lg border" />
-      <video ref={remoteVideoRef} autoPlay className="w-1/2 rounded-lg border" />
-      {!matched && <p>Waiting for a match...</p>}
+    <div className="flex flex-col items-center justify-center h-screen gap-4 p-4 bg-gray-900 text-white">
+      <h1 className="text-3xl font-semibold mb-2">
+        {matched ? "You're connected 🔗" : "Looking for someone... 🔍"}
+      </h1>
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          <p className="mb-1 text-sm">You</p>
+          <video ref={localVideoRef} autoPlay playsInline muted className="w-64 h-48 bg-black rounded-xl" />
+        </div>
+        <div className="flex flex-col items-center">
+          <p className="mb-1 text-sm">Stranger</p>
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-64 h-48 bg-black rounded-xl" />
+        </div>
+      </div>
     </div>
   );
 };
