@@ -65,21 +65,26 @@ const Match = () => {
                 });
 
                 peer.on("stream", (remoteStream) => {
-                  try {
-                    console.log(
-                      "📹 Remote stream received (initiator)",
-                      remoteStream
-                    );
-                    if (remoteVideoRef.current) {
-                      remoteVideoRef.current.srcObject = remoteStream;
-                      console.log("Remote video element set (initiator)");
+                  console.log("📹 Remote stream received", remoteStream);
+
+                  const attachStream = () => {
+                    const videoEl = remoteVideoRef.current;
+                    if (videoEl) {
+                      videoEl.srcObject = remoteStream;
+                      videoEl
+                        .play()
+                        .catch((err) =>
+                          console.error("Video play error:", err)
+                        );
+                      console.log("✅ Remote stream attached");
+                    } else {
+                      // Retry in 100ms until the ref is ready
+                      console.warn("⏳ remoteVideoRef not ready, retrying...");
+                      setTimeout(attachStream, 100);
                     }
-                  } catch (err) {
-                    console.error(
-                      "Error in peer.on('stream') (initiator)",
-                      err
-                    );
-                  }
+                  };
+
+                  attachStream();
                 });
 
                 peerRef.current = peer;
@@ -223,7 +228,9 @@ const Match = () => {
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
       <h1 className="text-2xl font-bold">
         {matched
-          ? `🎉 Connected!${remoteUserId ? ` (User: ${remoteUserId})` : "error!"}`
+          ? `🎉 Connected!${
+              remoteUserId ? ` (User: ${remoteUserId})` : "error!"
+            }`
           : "🔍 Finding a Match..."}
       </h1>
       <div className="flex gap-4">
