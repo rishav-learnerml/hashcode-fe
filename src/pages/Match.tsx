@@ -74,20 +74,22 @@ const Match = () => {
     // Define once and reuse
     if (!remoteVideoRef.current) return peer;
 
-    const remoteStream =
-      (remoteVideoRef.current.srcObject as MediaStream) || new MediaStream();
+    const remoteStream = new MediaStream();
 
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
       remoteStream.addTrack(event.track);
 
-      if (remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
+      if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
     };
 
     peer.oniceconnectionstatechange = () => {
-      console.log("ICE state:", peer.iceConnectionState);
+      console.log("ICE connection state changed to", peer.iceConnectionState);
+      if (peer.iceConnectionState === "disconnected") {
+        console.warn("Remote peer disconnected.");
+      }
     };
 
     peer.onicecandidate = (event) => {
@@ -247,7 +249,6 @@ const Match = () => {
             autoPlay
             playsInline
             muted={false} // required if remote stream has audio
-            controls // optionally helps in debugging
             className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
           />
         </div>
