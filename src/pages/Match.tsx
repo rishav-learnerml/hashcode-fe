@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import logo from "../assets/logo.png"; // or wherever your logo is stored
 import Fireflies from "../components/Fireflies";
 
-const socket = io("https://hashtalk.swagcoder.in", {
+const socket = io("wss://hashtalk.swagcoder.in", {
   transports: ["websocket"],
 });
 
