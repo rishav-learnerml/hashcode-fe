@@ -78,26 +78,26 @@ const Match = () => {
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
 
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
+      const remoteVideo = remoteVideoRef.current;
+      if (!remoteVideo) return;
 
-      // Add only if track not already added
-      const existingTracks = remoteStreamRef.current
-        .getTracks()
-        .map((t) => t.id);
-      if (!existingTracks.includes(event.track.id)) {
-        remoteStreamRef.current.addTrack(event.track);
-      }
+      // Create a fresh MediaStream with the incoming track
+      const incomingStream = new MediaStream([event.track]);
+      remoteStreamRef.current = incomingStream;
+      remoteVideo.srcObject = incomingStream;
 
-      if (remoteVideoRef.current && remoteStreamRef.current) {
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
-
-        remoteVideoRef.current
+      // Wait until metadata is ready before playing
+      remoteVideo.onloadedmetadata = () => {
+        remoteVideo
           .play()
-          .then(() => console.log("▶️ Remote video playing"))
-          .catch((err) => console.warn("❌ Remote video play error:", err));
-      }
+          .then(() => {
+            console.log("▶️ Remote video playing successfully.");
+            remoteVideo.muted = false; // Unmute after playback starts
+          })
+          .catch((err) => {
+            console.warn("❌ Error playing remote video:", err);
+          });
+      };
     };
 
     peer.oniceconnectionstatechange = () => {
