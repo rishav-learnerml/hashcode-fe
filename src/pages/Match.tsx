@@ -93,7 +93,7 @@ const Match = () => {
 
   const initiateCall = async () => {
     try {
-      const peer = createPeerConnection();
+      const peer:any = createPeerConnection();
       peerRef.current = peer;
 
       const offer = await peer.createOffer();
@@ -121,7 +121,7 @@ const Match = () => {
     socket.on("user-joined", async ({ signal, callerId }) => {
       console.log("User joined:", callerId);
       setRemoteSocketId(callerId);
-      const peer = createPeerConnection();
+      const peer:any = createPeerConnection();
       peerRef.current = peer;
 
       await peer.setRemoteDescription(new RTCSessionDescription(signal));
