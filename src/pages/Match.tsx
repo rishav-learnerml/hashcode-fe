@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import logo from "../assets/logo.png"; // or wherever your logo is stored
 import Fireflies from "../components/Fireflies";
 
-const socket = io("wss://hashtalk.swagcoder.in", {
+const socket = io("https://hashtalk.swagcoder.in", {
   transports: ["websocket"],
 });
 
@@ -295,6 +295,7 @@ const Match = () => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted // required if remote stream has audio
             className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
           />
         </div>
