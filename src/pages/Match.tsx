@@ -36,7 +36,24 @@ const Match = () => {
   const createPeerConnection = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
+        {
+          urls: "stun:stun.l.google.com:19302",
+        },
+        {
+          urls: "turn:relay.metered.ca:80",
+          username: "openai",
+          credential: "openai",
+        },
+        {
+          urls: "turn:relay.metered.ca:443",
+          username: "openai",
+          credential: "openai",
+        },
+        {
+          urls: "turn:relay.metered.ca:443?transport=tcp",
+          username: "openai",
+          credential: "openai",
+        },
       ],
     });
 
@@ -115,9 +132,7 @@ const Match = () => {
 
     socket.on("ice-candidate", async (candidate) => {
       try {
-        await peerRef.current?.addIceCandidate(
-          new RTCIceCandidate(candidate)
-        );
+        await peerRef.current?.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
         console.error("Error adding received ice candidate", err);
       }
