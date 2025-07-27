@@ -38,15 +38,33 @@ const Match = () => {
     getMedia();
   }, []);
 
-  const createPeerConnection = async () => {
-    const response = await fetch(
-      "https://hashtalkapp.metered.live/api/v1/turn/credentials?apiKey=5ccc5364bf8c4523982055534505beffdf25"
-    );
-
-    // Saving the response in the iceServers array
-    const iceServers = await response.json();
+  const createPeerConnection = () => {
     const peer = new RTCPeerConnection({
-      iceServers,
+      iceServers: [
+        {
+          urls: "stun:stun.relay.metered.ca:80",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "b10557008dab16b3b63274c4",
+          credential: "ISOBNxTOrdXdqggD",
+        },
+      ],
     });
 
     localStreamRef.current?.getTracks().forEach((track) => {
@@ -93,7 +111,7 @@ const Match = () => {
 
   const initiateCall = async () => {
     try {
-      const peer:any = createPeerConnection();
+      const peer = createPeerConnection();
       peerRef.current = peer;
 
       const offer = await peer.createOffer();
@@ -121,7 +139,7 @@ const Match = () => {
     socket.on("user-joined", async ({ signal, callerId }) => {
       console.log("User joined:", callerId);
       setRemoteSocketId(callerId);
-      const peer:any = createPeerConnection();
+      const peer = createPeerConnection();
       peerRef.current = peer;
 
       await peer.setRemoteDescription(new RTCSessionDescription(signal));
