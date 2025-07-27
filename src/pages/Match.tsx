@@ -237,6 +237,21 @@ const Match = () => {
     window.location.reload(); // Simple rematch by reloading
   };
 
+  useEffect(() => {
+  const interval = setInterval(() => {
+    if (remoteVideoRef.current) {
+      console.log("🔍 remoteVideoRef", {
+        srcObject: remoteVideoRef.current.srcObject,
+        readyState: remoteVideoRef.current.readyState,
+        paused: remoteVideoRef.current.paused,
+      });
+    }
+  }, 3000);
+
+  return () => clearInterval(interval);
+}, []);
+
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
       <Fireflies />
