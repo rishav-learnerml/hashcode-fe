@@ -38,33 +38,15 @@ const Match = () => {
     getMedia();
   }, []);
 
-  const createPeerConnection = () => {
+  const createPeerConnection = async () => {
+    const response = await fetch(
+      "https://hashtalkapp.metered.live/api/v1/turn/credentials?apiKey=5ccc5364bf8c4523982055534505beffdf25"
+    );
+
+    // Saving the response in the iceServers array
+    const iceServers = await response.json();
     const peer = new RTCPeerConnection({
-      iceServers: [
-        {
-          urls: "stun:stun.relay.metered.ca:80",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "b10557008dab16b3b63274c4",
-          credential: "ISOBNxTOrdXdqggD",
-        },
-      ],
+      iceServers,
     });
 
     localStreamRef.current?.getTracks().forEach((track) => {
@@ -74,15 +56,20 @@ const Match = () => {
     // Define once and reuse
     if (!remoteVideoRef.current) return peer;
 
-    const remoteStream = new MediaStream();
-
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
-      remoteStream.addTrack(event.track);
 
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
+      // Create new stream if not already
+      let remoteStream = remoteVideoRef.current?.srcObject as MediaStream;
+
+      if (!remoteStream) {
+        remoteStream = new MediaStream();
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
       }
+
+      remoteStream.addTrack(event.track);
     };
 
     peer.oniceconnectionstatechange = () => {
