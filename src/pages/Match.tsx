@@ -73,31 +73,29 @@ const Match = () => {
     });
 
     // Define once and reuse
-    if (!remoteVideoRef.current) return peer;
+    // if (!remoteVideoRef.current) return peer;
 
-    peer.ontrack = (event) => {
-      console.log("✅ Remote track received", event.track.kind);
+    if (remoteVideoRef.current) {
+      console.log("🎥 remoteVideoRef is available");
 
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
+      if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        console.log("🔗 Set remote video srcObject:", remoteStreamRef.current);
       }
 
-      remoteStreamRef.current.addTrack(event.track);
-
-      if (remoteVideoRef.current) {
-        // Only update srcObject if not already set
-        if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
-          remoteVideoRef.current.srcObject = remoteStreamRef.current;
-        }
-
-        // Wait briefly before calling play
-        setTimeout(() => {
-          remoteVideoRef.current?.play().catch((e) => {
-            console.warn("Playback prevented:", e);
+      setTimeout(() => {
+        remoteVideoRef.current
+          ?.play()
+          .then(() => {
+            console.log("▶️ Remote video is playing");
+          })
+          .catch((e) => {
+            console.warn("⛔ Remote video playback failed:", e);
           });
-        }, 200); // slight delay to allow srcObject to stabilize
-      }
-    };
+      }, 300);
+    } else {
+      console.warn("🚫 remoteVideoRef.current is null");
+    }
 
     peer.oniceconnectionstatechange = () => {
       console.log("ICE connection state changed to", peer.iceConnectionState);
