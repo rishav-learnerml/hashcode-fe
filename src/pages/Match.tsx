@@ -14,6 +14,7 @@ const Match = () => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
 
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
   const [isInitiator, setIsInitiator] = useState<boolean>(false);
@@ -77,17 +78,17 @@ const Match = () => {
     peer.ontrack = (event) => {
       console.log("✅ Remote track received", event.track.kind);
 
-      // Create new stream if not already
-      let remoteStream = remoteVideoRef.current?.srcObject as MediaStream;
-
-      if (!remoteStream) {
-        remoteStream = new MediaStream();
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+          remoteVideoRef.current
+            .play()
+            .catch((e) => console.warn("Playback prevented:", e));
         }
       }
 
-      remoteStream.addTrack(event.track);
+      remoteStreamRef.current.addTrack(event.track);
     };
 
     peer.oniceconnectionstatechange = () => {
