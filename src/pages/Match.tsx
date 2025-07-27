@@ -7,6 +7,7 @@ const socket = io("https://hashtalk.swagcoder.in");
 const Match = () => {
   const [matched, setMatched] = useState(false);
   const [streamReady, setStreamReady] = useState(false);
+  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -38,6 +39,7 @@ const Match = () => {
               try {
                 console.log("Matched with", socketId);
                 setMatched(true);
+                setRemoteUserId(socketId);
 
                 const peer = new Peer({
                   initiator: true,
@@ -89,6 +91,7 @@ const Match = () => {
             socket.on("user-joined", ({ signal, callerId }) => {
               try {
                 console.log("📞 Received signal from", callerId);
+                setRemoteUserId(callerId);
 
                 const peer = new Peer({
                   initiator: false,
@@ -219,7 +222,9 @@ const Match = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
       <h1 className="text-2xl font-bold">
-        {matched ? "🎉 Connected!" : "🔍 Finding a Match..."}
+        {matched
+          ? `🎉 Connected!${remoteUserId ? ` (User: ${remoteUserId})` : "error!"}`
+          : "🔍 Finding a Match..."}
       </h1>
       <div className="flex gap-4">
         <video
