@@ -1,25 +1,25 @@
-// Match.tsx
-import {  useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
 
-const socket = io("https://hashtalk.swagcoder.in"); // ✅ use your deployed backend URL
+const socket = io("https://hashtalk.swagcoder.in");
 
 const Match = () => {
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [peer, setPeer] = useState<Peer.Instance | null>(null);
   const [matched, setMatched] = useState(false);
+  const [streamReady, setStreamReady] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const peerRef = useRef<Peer.Instance | null>(null);
 
-
-  console.log(stream)
   useEffect(() => {
-    const roomId = crypto.randomUUID(); // or any static string for testing
+    const roomId = "default"; // better to keep this fixed
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((mediaStream) => {
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
+      setStreamReady(true);
+
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
       }
@@ -30,82 +30,107 @@ const Match = () => {
         console.log("Matched with", socketId);
         setMatched(true);
 
-        const newPeer = new Peer({
+        const peer = new Peer({
           initiator: true,
           trickle: false,
           stream: mediaStream,
         });
 
-        newPeer.on("signal", (signal) => {
+        peer.on("signal", (signal) => {
           socket.emit("sending-signal", {
             userToSignal: socketId,
             signal,
           });
         });
 
-        newPeer.on("stream", (remoteStream) => {
+        peer.on("stream", (remoteStream) => {
           console.log("📹 Remote stream received");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
           }
         });
 
-        setPeer(newPeer);
+        peerRef.current = peer;
       });
 
       socket.on("user-joined", ({ signal, callerId }) => {
-        const newPeer = new Peer({
+        console.log("📞 Received signal from", callerId);
+
+        const peer = new Peer({
           initiator: false,
           trickle: false,
           stream: mediaStream,
         });
 
-        newPeer.on("signal", (signal) => {
+        peer.on("signal", (signal) => {
           socket.emit("returning-signal", {
             signal,
             callerId,
           });
         });
 
-        newPeer.on("stream", (remoteStream) => {
-          console.log("📹 Remote stream received (non-initiator)");
+        peer.on("stream", (remoteStream) => {
+          console.log("📹 Remote stream received (callee)");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
           }
         });
 
-        newPeer.signal(signal);
-        setPeer(newPeer);
+        peer.signal(signal);
+        peerRef.current = peer;
       });
 
       socket.on("receiving-returned-signal", ({ signal, id }) => {
-        console.log(id)
-        if (peer) {
-          peer.signal(signal);
+        console.log("🎯 Receiving returned signal from", id);
+        if (peerRef.current) {
+          peerRef.current.signal(signal);
+        } else {
+          console.warn("⚠️ peerRef is null when trying to apply returned signal");
         }
       });
 
       socket.on("user-disconnected", () => {
-        console.log("User disconnected");
-        remoteVideoRef.current && (remoteVideoRef.current.srcObject = null);
-        peer?.destroy();
-        setPeer(null);
+        console.log("❌ User disconnected");
+        if (peerRef.current) {
+          peerRef.current.destroy();
+        }
+        peerRef.current = null;
         setMatched(false);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+        }
       });
     });
 
     return () => {
       socket.disconnect();
-      peer?.destroy();
+      if (peerRef.current) {
+        peerRef.current.destroy();
+      }
     };
   }, []);
 
+  console.log(streamReady,'streamReady');
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
-      <h1 className="text-2xl font-bold">{matched ? "🎉 Connected!" : "🔍 Finding a Match..."}</h1>
+      <h1 className="text-2xl font-bold">
+        {matched ? "🎉 Connected!" : "🔍 Finding a Match..."}
+      </h1>
       <div className="flex gap-4">
-        <video ref={localVideoRef} autoPlay playsInline muted className="w-64 h-48 rounded-lg border" />
-        <video ref={remoteVideoRef} autoPlay playsInline className="w-64 h-48 rounded-lg border" />
+        <video
+          ref={localVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-64 h-48 rounded-lg border"
+        />
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-64 h-48 rounded-lg border"
+        />
       </div>
     </div>
   );
