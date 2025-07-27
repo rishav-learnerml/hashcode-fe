@@ -41,16 +41,21 @@ const Match = () => {
   const createPeerConnection = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
         {
-          urls: "turn:openrelay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject",
+          urls: ["stun:bn-turn1.xirsys.com"],
         },
         {
-          urls: "turn:openrelay.metered.ca:443",
-          username: "openrelayproject",
-          credential: "openrelayproject",
+          username:
+            "dIUbp2Gao1eqypsQVJEbxfRfyckMUy9XaWBEP3boDVbTjG0tGoQrHSlxSCJv5Eh6AAAAAGiFudpSaXNoYXZDaGF0dGVyamVl",
+          credential: "0ae0360e-6aab-11f0-b3b0-0242ac140004",
+          urls: [
+            "turn:bn-turn1.xirsys.com:80?transport=udp",
+            "turn:bn-turn1.xirsys.com:3478?transport=udp",
+            "turn:bn-turn1.xirsys.com:80?transport=tcp",
+            "turn:bn-turn1.xirsys.com:3478?transport=tcp",
+            "turns:bn-turn1.xirsys.com:443?transport=tcp",
+            "turns:bn-turn1.xirsys.com:5349?transport=tcp",
+          ],
         },
       ],
     });
