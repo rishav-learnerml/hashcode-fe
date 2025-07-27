@@ -1,177 +1,139 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
-import Peer from "simple-peer";
 
-const socket = io("https://hashtalk.swagcoder.in");
+const socket = io("https://hashtalk.swagcoder.in"); // your signaling server
 
 const Match = () => {
-  const [matched, setMatched] = useState(false);
-  const [streamReady, setStreamReady] = useState(false);
-  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
-
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const peerRef = useRef<Peer.Instance | null>(null);
+  const peerConnection = useRef<RTCPeerConnection | null>(null);
+  const localStream = useRef<MediaStream | null>(null);
+  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
+  const [matched, setMatched] = useState(false);
 
   useEffect(() => {
     const roomId = "default";
 
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((mediaStream) => {
-        streamRef.current = mediaStream;
-        setStreamReady(true);
-        console.log("✅ Local stream ready");
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = mediaStream;
-        }
-
-        socket.emit("join-room", { roomId });
-
-        // ✅ MATCH FOUND
-        socket.on("match-found", ({ socketId }) => {
-          console.log("✅ Matched with:", socketId);
-
-          if (!streamRef.current) {
-            console.error("❌ Cannot create peer. Stream not available.");
-            return;
-          }
-
-          const peer = new Peer({
-            initiator: true,
-            trickle: false,
-            stream: streamRef.current,
-          });
-
-          peer.on("signal", (signal) => {
-            socket.emit("sending-signal", {
-              userToSignal: socketId,
-              signal,
-            });
-          });
-
-          peer.on("stream", (remoteStream) => {
-            const attachStream = () => {
-              if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-                remoteVideoRef.current
-                  .play()
-                  .catch((e) => console.error("play() failed", e));
-              } else {
-                setTimeout(attachStream, 100);
-              }
-            };
-            attachStream();
-          });
-
-          peerRef.current = peer;
-          setMatched(true);
-          setRemoteUserId(socketId);
-        });
-
-        // ✅ USER JOINED HANDLER
-        socket.on("user-joined", ({ signal, callerId }) => {
-          console.log("📞 Incoming call from:", callerId);
-
-          if (!streamRef.current) {
-            console.error("❌ Cannot accept peer. Stream not available.");
-            return;
-          }
-
-          const peer = new Peer({
-            initiator: false,
-            trickle: false,
-            stream: streamRef.current,
-          });
-
-          peer.on("signal", (signal) => {
-            socket.emit("returning-signal", {
-              signal,
-              callerId,
-            });
-          });
-
-          peer.on("stream", (remoteStream) => {
-            const attachStream = () => {
-              if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-                remoteVideoRef.current
-                  .play()
-                  .catch((e) => console.error("play() failed", e));
-              } else {
-                setTimeout(attachStream, 100);
-              }
-            };
-            attachStream();
-          });
-
-          try {
-            peer.signal(signal);
-          } catch (err) {
-            console.error("❌ Error applying caller signal:", err);
-          }
-
-          peerRef.current = peer;
-          setMatched(true);
-          setRemoteUserId(callerId);
-        });
-
-        // ✅ RECEIVING RETURNED SIGNAL
-        socket.on("receiving-returned-signal", ({ signal, id }) => {
-          console.log("🔁 Got return signal from:", id);
-
-          if (peerRef.current) {
-            try {
-              peerRef.current.signal(signal);
-            } catch (err) {
-              console.error("❌ Error applying returned signal:", err);
-            }
-          } else {
-            console.warn("⚠️ Peer not ready for return signal, retrying...");
-            setTimeout(() => {
-              if (peerRef.current) {
-                try {
-                  peerRef.current.signal(signal);
-                } catch (err) {
-                  console.error("❌ Delayed signal failed:", err);
-                }
-              }
-            }, 500);
-          }
-        });
-
-        // ✅ USER DISCONNECTED
-        socket.on("user-disconnected", () => {
-          console.log("🚫 User disconnected");
-
-          if (peerRef.current) {
-            peerRef.current.destroy();
-            peerRef.current = null;
-          }
-
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = null;
-          }
-
-          setMatched(false);
-          setRemoteUserId(null);
-        });
-      })
-      .catch((err) => {
-        console.error("❌ Error accessing user media:", err);
+    const start = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
       });
+
+      localStream.current = stream;
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      socket.emit("join-room", { roomId });
+
+      socket.on("match-found", async ({ socketId }: { socketId: string }) => {
+        setRemoteUserId(socketId);
+        setMatched(true);
+        createPeer(true, socketId);
+      });
+
+      socket.on("user-joined", async ({ signal, callerId }) => {
+        setRemoteUserId(callerId);
+        setMatched(true);
+        createPeer(false, callerId, signal);
+      });
+
+      socket.on("signal", async ({ signal }) => {
+        if (!peerConnection.current) return;
+        if (signal.type === "offer") {
+          await peerConnection.current.setRemoteDescription(
+            new RTCSessionDescription(signal)
+          );
+          const answer = await peerConnection.current.createAnswer();
+          await peerConnection.current.setLocalDescription(answer);
+          socket.emit("returning-signal", { signal: answer, callerId: remoteUserId });
+        } else if (signal.type === "answer") {
+          await peerConnection.current.setRemoteDescription(
+            new RTCSessionDescription(signal)
+          );
+        } else if (signal.candidate) {
+          try {
+            await peerConnection.current.addIceCandidate(new RTCIceCandidate(signal));
+          } catch (err) {
+            console.error("Error adding ICE candidate", err);
+          }
+        }
+      });
+
+      socket.on("user-disconnected", () => {
+        if (peerConnection.current) {
+          peerConnection.current.close();
+          peerConnection.current = null;
+        }
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+        }
+        setMatched(false);
+        setRemoteUserId(null);
+      });
+    };
+
+    const createPeer = async (
+      isInitiator: boolean,
+      otherUserId: string,
+      incomingSignal?: RTCSessionDescriptionInit
+    ) => {
+      peerConnection.current = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+        ],
+      });
+
+      if (localStream.current) {
+        localStream.current.getTracks().forEach((track) => {
+          peerConnection.current?.addTrack(track, localStream.current!);
+        });
+      }
+
+      peerConnection.current.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("sending-signal", {
+            userToSignal: otherUserId,
+            signal: event.candidate,
+          });
+        }
+      };
+
+      peerConnection.current.ontrack = (event) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      if (isInitiator) {
+        const offer = await peerConnection.current.createOffer();
+        await peerConnection.current.setLocalDescription(offer);
+        socket.emit("sending-signal", {
+          userToSignal: otherUserId,
+          signal: offer,
+        });
+      } else if (incomingSignal) {
+        await peerConnection.current.setRemoteDescription(incomingSignal);
+        const answer = await peerConnection.current.createAnswer();
+        await peerConnection.current.setLocalDescription(answer);
+        socket.emit("returning-signal", {
+          signal: answer,
+          callerId: otherUserId,
+        });
+      }
+    };
+
+    start();
 
     return () => {
       socket.disconnect();
-      if (peerRef.current) {
-        peerRef.current.destroy();
+      if (peerConnection.current) {
+        peerConnection.current.close();
       }
     };
   }, []);
-
-  console.log(streamReady)
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
