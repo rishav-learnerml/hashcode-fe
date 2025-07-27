@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
+import axios from "axios";
+import { motion } from "framer-motion";
+import logo from "../assets/logo.png"; // or wherever your logo is stored
+import Fireflies from "../components/Fireflies";
 
 const socket = io("https://hashtalk.swagcoder.in", {
   transports: ["websocket"],
@@ -10,8 +14,10 @@ const Match = () => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
   const [isInitiator, setIsInitiator] = useState<boolean>(false);
+  const [icebreaker, setIcebreaker] = useState<string>("");
 
   // 1. Get local media
   useEffect(() => {
@@ -90,8 +96,6 @@ const Match = () => {
     socket.on("match-found", ({ socketId }: { socketId: string }) => {
       console.log("Match found with", socketId);
       setRemoteSocketId(socketId);
-
-      // Simple deterministic logic: lexicographically smaller ID initiates
       if ((socket as any).id < socketId) {
         setIsInitiator(true);
       }
@@ -115,8 +119,8 @@ const Match = () => {
 
     socket.on("receiving-returned-signal", async ({ signal }) => {
       console.log("Receiving returned signal");
-      const connectionState = peerRef.current?.signalingState;
-      if (connectionState !== "stable") {
+      const state = peerRef.current?.signalingState;
+      if (state !== "stable") {
         try {
           await peerRef.current?.setRemoteDescription(
             new RTCSessionDescription(signal)
@@ -124,8 +128,6 @@ const Match = () => {
         } catch (e) {
           console.error("Error setting returned signal:", e);
         }
-      } else {
-        console.log("Ignoring returned signal due to state:", connectionState);
       }
     });
 
@@ -139,9 +141,7 @@ const Match = () => {
 
     socket.on("user-disconnected", (id) => {
       console.log("User disconnected:", id);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-      }
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
       peerRef.current?.close();
       peerRef.current = null;
     });
@@ -155,38 +155,102 @@ const Match = () => {
     };
   }, []);
 
-  // Trigger call initiation after we know both socketId and role
   useEffect(() => {
     if (remoteSocketId && isInitiator) {
       initiateCall();
     }
   }, [remoteSocketId, isInitiator]);
 
+  // Icebreaker fetch
+  useEffect(() => {
+    const fetchIcebreaker = async () => {
+      try {
+        const res = await axios.get("http://localhost:3000/ai/icebreaker");
+        setIcebreaker(res.data?.message || "Let's talk!");
+      } catch (err) {
+        console.error("Failed to fetch icebreaker:", err);
+        setIcebreaker("Let's talk!");
+      }
+    };
+    fetchIcebreaker();
+  }, []);
+
+  const handleRematch = async () => {
+    window.location.reload(); // Simple rematch by reloading
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 gap-6">
-      <h1 className="text-3xl font-bold">🔗 HashTalk Video Chat</h1>
-      <div className="flex flex-col md:flex-row items-center gap-6">
-        <div className="flex flex-col items-center">
-          <p className="mb-2">👤 You</p>
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-72 h-56 bg-black rounded-md shadow-lg"
-          />
-        </div>
-        <div className="flex flex-col items-center">
-          <p className="mb-2">🧑‍💻 Stranger</p>
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-72 h-56 bg-black rounded-md shadow-lg"
-          />
-        </div>
-      </div>
+ <div className="relative min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col items-center justify-center px-4 overflow-hidden">
+  <Fireflies />
+
+  {/* Animated Logo */}
+  <motion.img
+    src={logo}
+    alt="HashTalk Logo"
+    className="w-24 h-24 bg-transparent mb-8 z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+    animate={{ y: [0, -12, 0] }}
+    transition={{ duration: 2.5, ease: "easeInOut" }}
+  />
+
+  {/* Video Grid */}
+  <motion.div
+    className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-5xl z-10"
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.7, delay: 0.2 }}
+  >
+    {/* Local Video */}
+    <div className="flex flex-col items-center space-y-1">
+      <p className="text-sm text-blue-300 tracking-wide">👤 You</p>
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(0,255,255,0.2)] md:w-96 md:h-96"
+      />
     </div>
+
+    {/* Remote Video */}
+    <div className="flex flex-col items-center space-y-1">
+      <p className="text-sm text-pink-300 tracking-wide">🧑‍💻 Stranger Dev</p>
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className="rounded-xl border border-white/20 bg-black w-full max-w-sm aspect-video object-cover shadow-[0_0_20px_rgba(255,0,255,0.2)] md:w-96 md:h-96"
+      />
+    </div>
+  </motion.div>
+
+  {/* Icebreaker Prompt */}
+  <motion.div
+    className="mt-8 bg-white/10 backdrop-blur-lg p-4 px-6 rounded-lg border border-white/10 text-center max-w-2xl w-full shadow-md z-10"
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, delay: 0.4 }}
+  >
+    <p className="text-base font-medium text-white">
+      💬 Icebreaker: <span className="italic text-blue-200">{icebreaker || "Loading..."}</span>
+    </p>
+  </motion.div>
+
+  {/* Rematch Button */}
+  <motion.button
+    onClick={handleRematch}
+    className="mt-6 px-6 py-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 text-white font-semibold rounded-full shadow-lg transition-all duration-300"
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+  >
+    🔁 Rematch
+  </motion.button>
+
+  {/* Footer */}
+  <div className="absolute bottom-4 text-gray-400 text-xs z-10 tracking-wide">
+    Made with 💙 for devs by <span className="text-white font-medium">Rishav</span> · Zero-Cost Infra · Full OSS 🚀
+  </div>
+</div>
+
   );
 };
 
