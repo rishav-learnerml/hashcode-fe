@@ -43,7 +43,7 @@ const Match = () => {
     const peer = new RTCPeerConnection({
       iceServers: [
         {
-          urls: "relay1.expressturn.com:3480", // Optional but useful STUN server
+          urls: "stun:stun.l.google.com:19302", // Optional STUN
         },
         {
           urls: "turn:relay1.expressturn.com:3480",
