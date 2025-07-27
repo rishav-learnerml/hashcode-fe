@@ -14,7 +14,7 @@ const Match = () => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
+  // const remoteStreamRef = useRef<MediaStream | null>(null);
 
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
   const [isInitiator, setIsInitiator] = useState<boolean>(false);
