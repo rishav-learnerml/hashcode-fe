@@ -15,222 +15,169 @@ const Match = () => {
   const peerRef = useRef<Peer.Instance | null>(null);
 
   useEffect(() => {
-    try {
-      const roomId = "default"; // better to keep this fixed
-      console.log("Initializing media and socket for room:", roomId);
+    const roomId = "default";
 
-      navigator.mediaDevices
-        .getUserMedia({ video: true, audio: true })
-        .then((mediaStream) => {
-          try {
-            streamRef.current = mediaStream;
-            setStreamReady(true);
-            console.log("Local media stream obtained", mediaStream);
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((mediaStream) => {
+        streamRef.current = mediaStream;
+        setStreamReady(true);
+        console.log("✅ Local stream ready");
 
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = mediaStream;
-              console.log("Local video element set");
-            }
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = mediaStream;
+        }
 
-            socket.emit("join-room", { roomId });
-            console.log("Emitted join-room");
+        socket.emit("join-room", { roomId });
 
-            socket.on("match-found", ({ socketId }) => {
-              try {
-                console.log("Matched with", socketId);
-                setMatched(true);
-                setRemoteUserId(socketId);
+        // ✅ MATCH FOUND
+        socket.on("match-found", ({ socketId }) => {
+          console.log("✅ Matched with:", socketId);
 
-                const peer = new Peer({
-                  initiator: true,
-                  trickle: false,
-                  stream: mediaStream,
-                });
-                console.log("Peer created as initiator");
-
-                peer.on("signal", (signal) => {
-                  try {
-                    console.log("Peer signal (initiator)", signal);
-                    socket.emit("sending-signal", {
-                      userToSignal: socketId,
-                      signal,
-                    });
-                    console.log("Emitted sending-signal");
-                  } catch (err) {
-                    console.error(
-                      "Error in peer.on('signal') (initiator)",
-                      err
-                    );
-                  }
-                });
-
-                peer.on("stream", (remoteStream) => {
-                  console.log("📹 Remote stream received", remoteStream);
-
-                  const attachStream = () => {
-                    const videoEl = remoteVideoRef.current;
-                    if (videoEl) {
-                      videoEl.srcObject = remoteStream;
-                      videoEl
-                        .play()
-                        .catch((err) =>
-                          console.error("Video play error:", err)
-                        );
-                      console.log("✅ Remote stream attached");
-                    } else {
-                      // Retry in 100ms until the ref is ready
-                      console.warn("⏳ remoteVideoRef not ready, retrying...");
-                      setTimeout(attachStream, 100);
-                    }
-                  };
-
-                  attachStream();
-                });
-
-                peerRef.current = peer;
-              } catch (err) {
-                console.error("Error in match-found handler", err);
-              }
-            });
-
-            socket.on("user-joined", ({ signal, callerId }) => {
-              try {
-                console.log("📞 Received signal from", callerId);
-                setRemoteUserId(callerId);
-
-                const peer = new Peer({
-                  initiator: false,
-                  trickle: false,
-                  stream: mediaStream,
-                });
-                console.log("Peer created as callee");
-
-                peer.on("signal", (signal) => {
-                  try {
-                    console.log("Peer signal (callee)", signal);
-                    socket.emit("returning-signal", {
-                      signal,
-                      callerId,
-                    });
-                    console.log("Emitted returning-signal");
-                  } catch (err) {
-                    console.error("Error in peer.on('signal') (callee)", err);
-                  }
-                });
-
-                peer.on("stream", (remoteStream) => {
-                  try {
-                    console.log(
-                      "📹 Remote stream received (callee)",
-                      remoteStream
-                    );
-                    if (remoteVideoRef.current) {
-                      remoteVideoRef.current.srcObject = remoteStream;
-                      console.log("Remote video element set (callee)");
-                    }
-                  } catch (err) {
-                    console.error("Error in peer.on('stream') (callee)", err);
-                  }
-                });
-
-                try {
-                  peer.signal(signal);
-                  console.log("Peer signaled with caller's signal");
-                } catch (err) {
-                  console.error("Error signaling peer (callee)", err);
-                }
-                peerRef.current = peer;
-              } catch (err) {
-                console.error("Error in user-joined handler", err);
-              }
-            });
-
-            socket.on("receiving-returned-signal", ({ signal, id }) => {
-              try {
-                console.log("🎯 Receiving returned signal from", id);
-                if (peerRef.current) {
-                  peerRef.current.signal(signal);
-                  console.log("Peer signaled with returned signal");
-                } else {
-                  console.warn(
-                    "⚠️ peerRef not ready. Delaying signal application."
-                  );
-                  setTimeout(() => {
-                    try {
-                      if (peerRef.current) {
-                        peerRef.current.signal(signal);
-                        console.log("Peer signaled after delay");
-                      } else {
-                        console.error(
-                          "❌ Still no peerRef. Cannot apply signal."
-                        );
-                      }
-                    } catch (err) {
-                      console.error("Error in delayed signal application", err);
-                    }
-                  }, 500); // adjust if needed
-                }
-              } catch (err) {
-                console.error(
-                  "Error in receiving-returned-signal handler",
-                  err
-                );
-              }
-            });
-
-            socket.on("user-disconnected", () => {
-              try {
-                console.log("❌ User disconnected");
-                if (peerRef.current) {
-                  peerRef.current.destroy();
-                  console.log("Peer destroyed on disconnect");
-                }
-                peerRef.current = null;
-                setMatched(false);
-                if (remoteVideoRef.current) {
-                  remoteVideoRef.current.srcObject = null;
-                  console.log("Remote video element cleared on disconnect");
-                }
-              } catch (err) {
-                console.error("Error in user-disconnected handler", err);
-              }
-            });
-          } catch (err) {
-            console.error("Error in mediaStream then block", err);
+          if (!streamRef.current) {
+            console.error("❌ Cannot create peer. Stream not available.");
+            return;
           }
-        })
-        .catch((err) => {
-          console.error("Error getting user media", err);
+
+          const peer = new Peer({
+            initiator: true,
+            trickle: false,
+            stream: streamRef.current,
+          });
+
+          peer.on("signal", (signal) => {
+            socket.emit("sending-signal", {
+              userToSignal: socketId,
+              signal,
+            });
+          });
+
+          peer.on("stream", (remoteStream) => {
+            const attachStream = () => {
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteVideoRef.current
+                  .play()
+                  .catch((e) => console.error("play() failed", e));
+              } else {
+                setTimeout(attachStream, 100);
+              }
+            };
+            attachStream();
+          });
+
+          peerRef.current = peer;
+          setMatched(true);
+          setRemoteUserId(socketId);
         });
-    } catch (err) {
-      console.error("Error in useEffect setup", err);
-    }
+
+        // ✅ USER JOINED HANDLER
+        socket.on("user-joined", ({ signal, callerId }) => {
+          console.log("📞 Incoming call from:", callerId);
+
+          if (!streamRef.current) {
+            console.error("❌ Cannot accept peer. Stream not available.");
+            return;
+          }
+
+          const peer = new Peer({
+            initiator: false,
+            trickle: false,
+            stream: streamRef.current,
+          });
+
+          peer.on("signal", (signal) => {
+            socket.emit("returning-signal", {
+              signal,
+              callerId,
+            });
+          });
+
+          peer.on("stream", (remoteStream) => {
+            const attachStream = () => {
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteVideoRef.current
+                  .play()
+                  .catch((e) => console.error("play() failed", e));
+              } else {
+                setTimeout(attachStream, 100);
+              }
+            };
+            attachStream();
+          });
+
+          try {
+            peer.signal(signal);
+          } catch (err) {
+            console.error("❌ Error applying caller signal:", err);
+          }
+
+          peerRef.current = peer;
+          setMatched(true);
+          setRemoteUserId(callerId);
+        });
+
+        // ✅ RECEIVING RETURNED SIGNAL
+        socket.on("receiving-returned-signal", ({ signal, id }) => {
+          console.log("🔁 Got return signal from:", id);
+
+          if (peerRef.current) {
+            try {
+              peerRef.current.signal(signal);
+            } catch (err) {
+              console.error("❌ Error applying returned signal:", err);
+            }
+          } else {
+            console.warn("⚠️ Peer not ready for return signal, retrying...");
+            setTimeout(() => {
+              if (peerRef.current) {
+                try {
+                  peerRef.current.signal(signal);
+                } catch (err) {
+                  console.error("❌ Delayed signal failed:", err);
+                }
+              }
+            }, 500);
+          }
+        });
+
+        // ✅ USER DISCONNECTED
+        socket.on("user-disconnected", () => {
+          console.log("🚫 User disconnected");
+
+          if (peerRef.current) {
+            peerRef.current.destroy();
+            peerRef.current = null;
+          }
+
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = null;
+          }
+
+          setMatched(false);
+          setRemoteUserId(null);
+        });
+      })
+      .catch((err) => {
+        console.error("❌ Error accessing user media:", err);
+      });
 
     return () => {
-      try {
-        socket.disconnect();
-        console.log("Socket disconnected in cleanup");
-        if (peerRef.current) {
-          peerRef.current.destroy();
-          console.log("Peer destroyed in cleanup");
-        }
-      } catch (err) {
-        console.error("Error in cleanup", err);
+      socket.disconnect();
+      if (peerRef.current) {
+        peerRef.current.destroy();
       }
     };
   }, []);
 
-  console.log(streamReady, "streamReady");
-  console.log(remoteVideoRef, "remoteVideoRef");
-  console.log(localVideoRef, "localVideoRef");
+  console.log(streamReady)
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white space-y-4">
       <h1 className="text-2xl font-bold">
         {matched
-          ? `🎉 Connected!${
-              remoteUserId ? ` (User: ${remoteUserId})` : "error!"
-            }`
+          ? `🎉 Connected!${remoteUserId ? ` (User: ${remoteUserId})` : ""}`
           : "🔍 Finding a Match..."}
       </h1>
       <div className="flex gap-4">
@@ -247,7 +194,6 @@ const Match = () => {
           playsInline
           className="w-64 h-48 rounded-lg border"
         />
-        <div className="text-xl"></div>
       </div>
     </div>
   );
